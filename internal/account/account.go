@@ -3,6 +3,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -64,10 +65,19 @@ func (st *Store) Get(ctx context.Context, accountID int64) (Settings, error) {
 	return s, err
 }
 
+// ErrCurrencyLocked: the currency cannot change once the account has loans, so balances
+// never add up amounts in different currencies.
+var ErrCurrencyLocked = errors.New("currency is locked once loans exist")
+
 // Update replaces the settings; s must be normalized and valid.
 func (st *Store) Update(ctx context.Context, accountID int64, s Settings) error {
-	_, err := st.db.Exec(ctx,
-		`UPDATE accounts SET name = $2, currency = $3, timezone = $4, send_hour = $5, locale = $6 WHERE id = $1`,
+	tag, err := st.db.Exec(ctx, `
+		UPDATE accounts SET name = $2, currency = $3, timezone = $4, send_hour = $5, locale = $6
+		WHERE id = $1
+		  AND (currency = $3 OR NOT EXISTS (SELECT 1 FROM agreements WHERE account_id = $1))`,
 		accountID, s.Name, s.Currency, s.Timezone, s.SendHour, s.Locale)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrCurrencyLocked
+	}
 	return err
 }

@@ -46,6 +46,9 @@ type Principal struct {
 	Locale    string
 	AccountID int64
 	Role      string
+	// The account's ledger settings every money request needs.
+	Timezone string
+	Currency string
 }
 
 // OwnerInput creates the first user and their ledger account.
@@ -248,14 +251,15 @@ func (s *Store) CreateSession(ctx context.Context, userID int64) (token string, 
 func (s *Store) Principal(ctx context.Context, token string) (Principal, error) {
 	var p Principal
 	err := s.db.QueryRow(ctx, `
-		SELECT u.id, u.name, u.email, u.locale, m.account_id, m.role
+		SELECT u.id, u.name, u.email, u.locale, m.account_id, m.role, a.timezone, a.currency
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		JOIN account_members m ON m.user_id = u.id
+		JOIN accounts a ON a.id = m.account_id
 		WHERE s.id_hash = $1 AND s.expires_at > now()
 		ORDER BY m.created_at
 		LIMIT 1`, hashToken(token)).
-		Scan(&p.UserID, &p.Name, &p.Email, &p.Locale, &p.AccountID, &p.Role)
+		Scan(&p.UserID, &p.Name, &p.Email, &p.Locale, &p.AccountID, &p.Role, &p.Timezone, &p.Currency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrNoSession
 	}

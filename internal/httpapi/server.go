@@ -14,6 +14,7 @@ import (
 
 	"github.com/masiur/taka-poisa/internal/account"
 	"github.com/masiur/taka-poisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/ledger"
 	"github.com/masiur/taka-poisa/internal/validate"
 )
 
@@ -31,6 +32,7 @@ type server struct {
 	db            *pgxpool.Pool
 	auth          *auth.Store
 	accounts      *account.Store
+	ledger        *ledger.Store
 	google        *auth.Google
 	secureCookies bool
 	loginLimit    *limiter
@@ -42,6 +44,7 @@ func New(cfg Config) http.Handler {
 		db:            cfg.DB,
 		auth:          auth.NewStore(cfg.DB),
 		accounts:      account.NewStore(cfg.DB),
+		ledger:        ledger.NewStore(cfg.DB),
 		google:        cfg.Google,
 		secureCookies: cfg.SecureCookies,
 		loginLimit:    newLimiter(10, 15*time.Minute),
@@ -59,6 +62,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/me", s.requireAuth(s.me))
 	mux.HandleFunc("GET /api/account", s.requireAuth(s.getAccount))
 	mux.HandleFunc("PUT /api/account", s.requireAuth(s.putAccount))
+	s.ledgerRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 	})
@@ -242,7 +246,12 @@ func (s *server) putAccount(w http.ResponseWriter, r *http.Request, p auth.Princ
 		writeError(w, http.StatusUnprocessableEntity, "validation", errs)
 		return
 	}
-	if err := s.accounts.Update(r.Context(), p.AccountID, in); err != nil {
+	err := s.accounts.Update(r.Context(), p.AccountID, in)
+	if errors.Is(err, account.ErrCurrencyLocked) {
+		writeError(w, http.StatusUnprocessableEntity, "validation", validate.Errors{"currency": "locked"})
+		return
+	}
+	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}

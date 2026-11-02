@@ -30,6 +30,13 @@ func newTestServer(t *testing.T) *httptest.Server {
 
 func newTestServerWith(t *testing.T, google *auth.Google) *httptest.Server {
 	t.Helper()
+	srv, _ := newTestEnv(t, google)
+	return srv
+}
+
+// newTestEnv also returns the pool, for tests that need to arrange data directly.
+func newTestEnv(t *testing.T, google *auth.Google) (*httptest.Server, *pgxpool.Pool) {
+	t.Helper()
 	base := os.Getenv("TEST_DATABASE_URL")
 	if base == "" {
 		t.Skip("TEST_DATABASE_URL not set")
@@ -69,7 +76,7 @@ func newTestServerWith(t *testing.T, google *auth.Google) *httptest.Server {
 		Log:    slog.New(slog.DiscardHandler),
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, pool
 }
 
 func newClient(t *testing.T) *http.Client {
