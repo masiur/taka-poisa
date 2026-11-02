@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/takapoisa/takapoisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/auth"
 )
 
 const testClientID = "test-client.apps.googleusercontent.com"

@@ -86,4 +86,4 @@ web/                SvelteKit app
 
 ## License
 
-AGPL-3.0 (license file to be added).
+[AGPL-3.0](LICENSE).

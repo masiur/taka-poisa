@@ -18,8 +18,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/takapoisa/takapoisa/internal/auth"
-	"github.com/takapoisa/takapoisa/internal/db"
+	"github.com/masiur/taka-poisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/db"
 )
 
 // newTestServer runs the API against a fresh database created on TEST_DATABASE_URL.

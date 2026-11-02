@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/takapoisa/takapoisa/internal/auth"
-	"github.com/takapoisa/takapoisa/internal/validate"
+	"github.com/masiur/taka-poisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/validate"
 )
 
 const (

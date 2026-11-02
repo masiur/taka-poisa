@@ -11,7 +11,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
-	"github.com/takapoisa/takapoisa/migrations"
+	"github.com/masiur/taka-poisa/migrations"
 )
 
 // Connect opens a pool and waits up to 30 seconds for the database to accept connections,

@@ -12,9 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/takapoisa/takapoisa/internal/account"
-	"github.com/takapoisa/takapoisa/internal/auth"
-	"github.com/takapoisa/takapoisa/internal/validate"
+	"github.com/masiur/taka-poisa/internal/account"
+	"github.com/masiur/taka-poisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/validate"
 )
 
 const sessionCookie = "tp_session"

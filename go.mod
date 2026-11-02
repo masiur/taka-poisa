@@ -1,4 +1,4 @@
-module github.com/takapoisa/takapoisa
+module github.com/masiur/taka-poisa
 
 go 1.26.0
 

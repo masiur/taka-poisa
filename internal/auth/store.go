@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/takapoisa/takapoisa/internal/validate"
+	"github.com/masiur/taka-poisa/internal/validate"
 )
 
 const SessionTTL = 30 * 24 * time.Hour

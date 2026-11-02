@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/takapoisa/takapoisa/internal/auth"
-	"github.com/takapoisa/takapoisa/internal/db"
-	"github.com/takapoisa/takapoisa/internal/httpapi"
-	"github.com/takapoisa/takapoisa/internal/webui"
+	"github.com/masiur/taka-poisa/internal/auth"
+	"github.com/masiur/taka-poisa/internal/db"
+	"github.com/masiur/taka-poisa/internal/httpapi"
+	"github.com/masiur/taka-poisa/internal/webui"
 )
 
 type config struct {

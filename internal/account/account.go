@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/takapoisa/takapoisa/internal/validate"
+	"github.com/masiur/taka-poisa/internal/validate"
 )
 
 var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
