@@ -1,0 +1,28 @@
+{
+	"name": "takapoisa-web",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@12.4.1",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build && touch ../internal/webui/dist/.gitkeep",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-static": "^4.0.1",
+		"@sveltejs/kit": "^3.1.1",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"svelte": "^5.57.3",
+		"svelte-check": "^4.7.7",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.5"
+	},
+	"imports": {
+		"#lib/*": "./src/lib/*"
+	},
+	"dependencies": {
+		"@fontsource-variable/noto-sans-bengali": "^5.3.0",
+		"@fontsource-variable/roboto": "^5.3.0",
+		"@material-symbols/svg-400": "^0.48.2"
+	}
+}

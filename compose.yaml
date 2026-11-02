@@ -1,0 +1,35 @@
+# Self-hosting: `docker compose up -d`, then open BASE_URL and create the owner account.
+# Set POSTGRES_PASSWORD (and BASE_URL when running behind a domain) in a .env file next to this one.
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: takapoisa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-takapoisa}
+      POSTGRES_DB: takapoisa
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U takapoisa -d takapoisa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://takapoisa:${POSTGRES_PASSWORD:-takapoisa}@db:5432/takapoisa?sslmode=disable
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      # Optional Google sign-in; leave empty to disable.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    ports:
+      - "${PORT:-8080}:8080"
+
+volumes:
+  pgdata:
