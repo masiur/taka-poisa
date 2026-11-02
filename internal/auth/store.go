@@ -64,6 +64,17 @@ func (in *OwnerInput) Normalize() {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = validate.NormalizeEmail(in.Email)
 	in.AccountName = strings.TrimSpace(in.AccountName)
+	if in.AccountName == "" {
+		in.AccountName = DefaultAccountName(in.Locale)
+	}
+}
+
+// DefaultAccountName names the first ledger. People group contacts with tags, not separate ledgers.
+func DefaultAccountName(locale string) string {
+	if locale == "en" {
+		return "Personal"
+	}
+	return "ব্যক্তিগত"
 }
 
 func (in OwnerInput) Validate() validate.Errors {

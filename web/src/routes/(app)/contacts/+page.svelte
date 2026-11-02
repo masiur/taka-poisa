@@ -11,12 +11,24 @@
 	let q = $state(data.q);
 	let timer: ReturnType<typeof setTimeout>;
 
+	function listURL(q: string, tag: string) {
+		const params = new URLSearchParams();
+		if (q) params.set('q', q);
+		if (tag) params.set('tag', tag);
+		return `?${params}`;
+	}
+
 	function search() {
 		clearTimeout(timer);
 		timer = setTimeout(() => {
-			goto(q ? `?q=${encodeURIComponent(q)}` : '?', { replace: true, reset: false });
+			goto(listURL(q, data.tag), { replace: true, reset: false });
 		}, 250);
 	}
+
+	// Totals for the filtered contacts, so a tag shows what that group owes overall.
+	const totals = $derived(
+		data.contacts.reduce((s, c) => ({ receivable: s.receivable + c.receivable, payable: s.payable + c.payable }), { receivable: 0, payable: 0 })
+	);
 </script>
 
 <svelte:head><title>{t('contacts')} · {t('app_name')}</title></svelte:head>
@@ -28,8 +40,24 @@
 	<input type="search" bind:value={q} oninput={search} placeholder={t('search_contacts')} aria-label={t('search_contacts')} />
 </label>
 
+{#if data.tags.length > 0}
+	<nav class="tag_filter" aria-label={t('tags')}>
+		<a class="md-chip-button md-state" class:tag_filter--on={!data.tag} aria-current={!data.tag ? 'page' : undefined} href={listURL(data.q, '')} data-sveltekit-replacestate>{t('all_contacts')}</a>
+		{#each data.tags as tag (tag)}
+			<a class="md-chip-button md-state" class:tag_filter--on={data.tag === tag} aria-current={data.tag === tag ? 'page' : undefined} href={listURL(data.q, tag)} data-sveltekit-replacestate>{tag}</a>
+		{/each}
+	</nav>
+{/if}
+
+{#if data.tag && data.contacts.length > 0}
+	<p class="md-body-medium totals">
+		<span class="md-money-in">{t('they_owe_you', { amount: money(totals.receivable, data.currency) })}</span>
+		<span>{t('you_owe_them', { amount: money(totals.payable, data.currency) })}</span>
+	</p>
+{/if}
+
 {#if data.contacts.length === 0}
-	<p class="md-body-medium md-muted empty">{data.q ? t('err_not_found') : t('no_contacts')}</p>
+	<p class="md-body-medium md-muted empty">{data.q || data.tag ? t('err_not_found') : t('no_contacts')}</p>
 {:else}
 	<ul class="md-list">
 		{#each data.contacts as c (c.id)}
@@ -90,6 +118,34 @@
 	.search:focus-within {
 		background: var(--md-sys-color-surface);
 		box-shadow: var(--md-sys-elevation-1);
+	}
+
+	.tag_filter {
+		display: flex;
+		gap: 8px;
+		margin: 8px 0;
+		overflow-x: auto;
+	}
+
+	.tag_filter a {
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		text-decoration: none;
+	}
+
+	/* Selected filter chip: M3 secondary container. */
+	.tag_filter .tag_filter--on {
+		border-color: transparent;
+		background: var(--md-sys-color-secondary-container);
+		color: var(--md-sys-color-on-secondary-container);
+	}
+
+	.totals {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+		margin: 8px 0;
 	}
 
 	.empty {

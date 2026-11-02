@@ -69,6 +69,11 @@
 	<div class="profile__lines md-body-medium">
 		{#if c.phone}<a href="tel:{c.phone}" class="profile__line"><Icon name="call" size={18} />{c.phone}</a>{/if}
 		{#if c.email}<a href="mailto:{c.email}" class="profile__line"><Icon name="mail" size={18} />{c.email}</a>{/if}
+		{#if c.tags.length > 0}
+			<ul class="tags">
+				{#each c.tags as tag (tag)}<li><a class="md-chip md-chip--neutral" href="/contacts?tag={encodeURIComponent(tag)}">{tag}</a></li>{/each}
+			</ul>
+		{/if}
 		{#if c.notes}<p class="md-muted notes">{c.notes}</p>{/if}
 		<div class="share">
 			<button type="button" class="md-button md-button--outlined md-state" onclick={shareLink}><Icon name="link" size={18} />{t('share_statement')}</button>
@@ -137,6 +142,19 @@
 		color: var(--md-sys-color-on-surface-variant);
 		text-decoration: none;
 		overflow-wrap: anywhere;
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.tags a {
+		text-decoration: none;
 	}
 
 	.notes {

@@ -327,3 +327,42 @@ func TestExportNeutralisesFormulas(t *testing.T) {
 		t.Fatalf("unknown export kind: %d", code)
 	}
 }
+
+func TestContactTags(t *testing.T) {
+	srv := newTestServer(t)
+	c := ownerClient(t, srv.URL)
+	rahim := mustCreate(t, c, srv.URL+"/api/contacts", map[string]any{"name": "Rahim", "tags": []string{" Office  colleague ", "office colleague", "", "Family"}})
+	mustCreate(t, c, srv.URL+"/api/contacts", map[string]any{"name": "Karim"})
+
+	_, body := call(t, c, "GET", fmt.Sprintf("%s/api/contacts/%d", srv.URL, rahim), nil)
+	if got := fmt.Sprint(body["contact"].(map[string]any)["tags"]); got != "[Office colleague Family]" {
+		t.Fatalf("tags not normalised: %s", got)
+	}
+	_, list := call(t, c, "GET", srv.URL+"/api/contacts?tag=Family", nil)
+	if contacts := list["contacts"].([]any); len(contacts) != 1 {
+		t.Fatalf("tag filter: %v", list)
+	}
+	if _, tags := call(t, c, "GET", srv.URL+"/api/contacts/tags", nil); fmt.Sprint(tags["tags"]) != "[Family Office colleague]" {
+		t.Fatalf("tags: %v", tags)
+	}
+
+	tooMany := make([]string, 11)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprint("t", i)
+	}
+	if code, body := call(t, c, "PUT", fmt.Sprintf("%s/api/contacts/%d", srv.URL, rahim), map[string]any{"name": "Rahim", "tags": tooMany}); code != 422 || body["fields"].(map[string]any)["tags"] == nil {
+		t.Fatalf("too many tags: %d %v", code, body)
+	}
+}
+
+func TestSetupDefaultsLedgerName(t *testing.T) {
+	srv := newTestServer(t)
+	c := newClient(t)
+	in := map[string]any{"name": "U", "email": "u@example.com", "password": "password1", "locale": "en"}
+	if code, body := call(t, c, "POST", srv.URL+"/api/setup", in); code != 204 {
+		t.Fatalf("setup without ledger name: %d %v", code, body)
+	}
+	if _, body := call(t, c, "GET", srv.URL+"/api/account", nil); body["name"] != "Personal" {
+		t.Fatalf("ledger name: %v", body)
+	}
+}

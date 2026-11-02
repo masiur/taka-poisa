@@ -5,6 +5,8 @@
 	import Icon from '#lib/Icon.svelte';
 	import { i18n, t } from '#lib/i18n.svelte.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
+
+	let { data } = $props();
 </script>
 
 <svelte:head><title>{t('new_contact')} · {t('app_name')}</title></svelte:head>
@@ -15,7 +17,8 @@
 </header>
 
 <ContactForm
-	initial={{ name: '', email: '', phone: '', locale: i18n.locale, notes: '' }}
+	initial={{ name: '', email: '', phone: '', locale: i18n.locale, notes: '', tags: [] }}
+	tags={data.tags}
 	onsave={async (v) => {
 		const { id } = await api<{ id: number }>('POST', '/contacts', v);
 		snackbar.show(t('contact_saved'));

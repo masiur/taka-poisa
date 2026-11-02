@@ -13,7 +13,6 @@
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
-	let accountName = $state('');
 	let fields = $state<Record<string, string>>({});
 	let submitError = $state('');
 	let busy = $state(false);
@@ -33,7 +32,7 @@
 		fields = {};
 		submitError = '';
 		try {
-			await api('POST', '/setup', { name, email, password, account_name: accountName, locale: i18n.locale });
+			await api('POST', '/setup', { name, email, password, locale: i18n.locale });
 			await goto('/', { refreshAll: true });
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'validation') fields = err.fields;
@@ -43,14 +42,9 @@
 		}
 	}
 
-	// Google supplies name and email; the ledger name and language come from this page.
+	// Google supplies name and email; the language comes from this page.
 	function setupWithGoogle() {
-		if (!accountName.trim()) {
-			fields = { account_name: 'required' };
-			document.getElementById('account_name')?.focus();
-			return;
-		}
-		const q = new URLSearchParams({ mode: 'setup', account_name: accountName, locale: i18n.locale });
+		const q = new URLSearchParams({ mode: 'setup', locale: i18n.locale });
 		location.href = `/api/auth/google/start?${q}`;
 	}
 </script>
@@ -60,7 +54,6 @@
 <AuthLayout title={t('setup_title')} intro={t('setup_intro')}>
 	<div class="md-form" oninput={clearFieldError}>
 		{#if formError}<Alert message={formError} />{/if}
-		<TextField id="account_name" label={t('book_name')} hint={t('book_name_hint')} bind:value={accountName} error={fields.account_name} required maxlength={100} />
 
 		{#if data.google}
 			<GoogleButton label={t('setup_with_google')} onclick={setupWithGoogle} />

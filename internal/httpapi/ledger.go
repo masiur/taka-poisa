@@ -15,6 +15,7 @@ func (s *server) ledgerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/overview", s.requireAuth(s.overview))
 	mux.HandleFunc("GET /api/contacts", s.requireAuth(s.listContacts))
 	mux.HandleFunc("POST /api/contacts", s.requireAuth(s.createContact))
+	mux.HandleFunc("GET /api/contacts/tags", s.requireAuth(s.listContactTags))
 	mux.HandleFunc("GET /api/contacts/{id}", s.requireAuth(s.getContact))
 	mux.HandleFunc("PUT /api/contacts/{id}", s.requireAuth(s.updateContact))
 	mux.HandleFunc("DELETE /api/contacts/{id}", s.requireAuth(s.deleteContact))
@@ -79,12 +80,22 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request, p auth.Princip
 }
 
 func (s *server) listContacts(w http.ResponseWriter, r *http.Request, p auth.Principal) {
-	list, err := s.ledger.ListContacts(r.Context(), p.AccountID, ledger.Today(p.Timezone), r.URL.Query().Get("q"))
+	q := r.URL.Query()
+	list, err := s.ledger.ListContacts(r.Context(), p.AccountID, ledger.Today(p.Timezone), q.Get("q"), q.Get("tag"))
 	if err != nil {
 		s.ledgerError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"contacts": list, "currency": p.Currency})
+}
+
+func (s *server) listContactTags(w http.ResponseWriter, r *http.Request, p auth.Principal) {
+	tags, err := s.ledger.ContactTags(r.Context(), p.AccountID)
+	if err != nil {
+		s.ledgerError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
 }
 
 func (s *server) createContact(w http.ResponseWriter, r *http.Request, p auth.Principal) {

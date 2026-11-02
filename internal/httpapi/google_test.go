@@ -238,8 +238,8 @@ func TestGoogleRejections(t *testing.T) {
 func TestGoogleSetupValidatesInput(t *testing.T) {
 	f := newFakeGoogle(t)
 	srv := newTestServerWith(t, f.client())
-	if loc := location(t, noRedirectClient(t), srv.URL+"/api/auth/google/start?mode=setup&account_name=&locale=en"); loc != "/setup?error=invalid" {
-		t.Fatalf("blank account name redirected to %q", loc)
+	if loc := location(t, noRedirectClient(t), srv.URL+"/api/auth/google/start?mode=setup&locale=xx"); loc != "/setup?error=invalid" {
+		t.Fatalf("bad locale redirected to %q", loc)
 	}
 }
 

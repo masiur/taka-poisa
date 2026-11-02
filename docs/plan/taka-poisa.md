@@ -81,6 +81,7 @@ One codebase, two ways to run it:
 
 ### Hosted-only
 
+- Google sign-in (compiled only into the hosted build with `-tags hosted`; self-hosted builds ignore `GOOGLE_*`).
 - Managed email at higher limits, SMS credits, WhatsApp reminders (Meta business verification).
 - Custom sending domain, automatic backups, team books (shop owner + staff with roles).
 
@@ -249,6 +250,7 @@ Same binary. Behaviour switches by config, not by a separate codebase.
 | | Self-hosted | Hosted |
 |---|---|---|
 | Sign-up | First visitor creates the owner; then invite-only (`SIGNUP=closed`) | Open, with email verification |
+| Sign-in | Email and password | Email and password, plus **Google sign-in** (hosted build only: `-tags hosted`) |
 | Accounts | One (more possible) | Many, RLS on |
 | Email | Your SMTP | Managed, per-account caps by plan |
 | SMS / WhatsApp | Your gateway keys (later) | Credits |

@@ -27,7 +27,6 @@ Backups: `docker compose exec db pg_dump -U takapoisa takapoisa > backup.sql`.
 | `DATABASE_URL` | (required) | PostgreSQL connection URL |
 | `BASE_URL` | `http://localhost:8080` | Public URL of the app |
 | `LISTEN_ADDR` | `:8080` | Address the server listens on |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | (empty) | Optional Google sign-in, see below |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_TLS` | (empty) | Email for reminders, see below |
 
 Migrations run automatically on start.
@@ -51,15 +50,10 @@ docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
 SMTP_HOST=localhost SMTP_PORT=1025 SMTP_TLS=none SMTP_FROM=reminders@example.test
 ```
 
-### Google sign-in (optional)
+### Signing in
 
-1. In [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials), create an
-   OAuth client ID of type **Web application**.
-2. Add the authorized redirect URI `<BASE_URL>/api/auth/google/callback`.
-3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, then restart.
-
-The owner can set up the server with Google. After that, Google sign-in works for existing users whose
-Google-verified email matches their account; it does not let new people sign up.
+Self-hosted servers use email and password. The owner account is created on first visit.
+(Google sign-in is part of the hosted app only.)
 
 ## Develop
 

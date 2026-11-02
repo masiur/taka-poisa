@@ -1,19 +1,21 @@
 <script lang="ts" module>
-	export type ContactValues = { name: string; email: string; phone: string; locale: 'bn' | 'en'; notes: string };
+	export type ContactValues = { name: string; email: string; phone: string; locale: 'bn' | 'en'; notes: string; tags: string[] };
 </script>
 
 <script lang="ts">
 	import { ApiError } from './api.js';
 	import Alert from './Alert.svelte';
 	import SelectField from './SelectField.svelte';
+	import TagField from './TagField.svelte';
 	import TextField from './TextField.svelte';
 	import { errorText, t } from './i18n.svelte.js';
 
 
 	let {
 		initial,
+		tags,
 		onsave
-	}: { initial: ContactValues; onsave: (values: ContactValues) => Promise<void> } = $props();
+	}: { initial: ContactValues; tags: string[]; onsave: (values: ContactValues) => Promise<void> } = $props();
 
 	// svelte-ignore state_referenced_locally
 	let form = $state<ContactValues>({ ...initial });
@@ -46,6 +48,7 @@
 	<TextField id="name" label={t('name')} bind:value={form.name} error={fields.name} required maxlength={100} autocomplete="off" />
 	<TextField id="phone" label={t('phone')} type="tel" hint={t('phone_hint')} bind:value={form.phone} error={fields.phone} inputmode="tel" autocomplete="off" />
 	<TextField id="email" label={t('email')} type="email" bind:value={form.email} error={fields.email} autocomplete="off" />
+	<TagField bind:value={form.tags} suggestions={tags} error={fields.tags} />
 	<SelectField id="locale" label={t('contact_language')} bind:value={form.locale} error={fields.locale}>
 		<option value="bn">বাংলা</option>
 		<option value="en">English</option>

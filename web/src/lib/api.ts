@@ -50,6 +50,7 @@ export type Contact = {
 	phone: string;
 	locale: 'bn' | 'en';
 	notes: string;
+	tags: string[];
 	email_opted_out: boolean;
 };
 

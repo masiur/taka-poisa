@@ -32,12 +32,18 @@ func NewStore(db *pgxpool.Pool) *Store {
 }
 
 type ContactInput struct {
-	Name   string `json:"name"`
-	Email  string `json:"email"`
-	Phone  string `json:"phone"`
-	Locale string `json:"locale"`
-	Notes  string `json:"notes"`
+	Name   string   `json:"name"`
+	Email  string   `json:"email"`
+	Phone  string   `json:"phone"`
+	Locale string   `json:"locale"`
+	Notes  string   `json:"notes"`
+	Tags   []string `json:"tags"`
 }
+
+const (
+	maxTags   = 10
+	maxTagLen = 40
+)
 
 var (
 	e164Re       = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
@@ -66,6 +72,23 @@ func (in *ContactInput) Normalize() {
 	if in.Locale == "" {
 		in.Locale = "bn"
 	}
+	in.Tags = normalizeTags(in.Tags)
+}
+
+// normalizeTags trims and collapses spaces, drops blanks and case-insensitive duplicates, keeping order.
+func normalizeTags(tags []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, t := range tags {
+		t = strings.Join(strings.Fields(t), " ")
+		key := strings.ToLower(t)
+		if t == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 func (in ContactInput) Validate() validate.Errors {
@@ -81,6 +104,14 @@ func (in ContactInput) Validate() validate.Errors {
 	if len([]rune(in.Notes)) > 2000 {
 		e.Add("notes", validate.TooLong)
 	}
+	if len(in.Tags) > maxTags {
+		e.Add("tags", validate.TooLong)
+	}
+	for _, t := range in.Tags {
+		if len([]rune(t)) > maxTagLen {
+			e.Add("tags", validate.TooLong)
+		}
+	}
 	return e
 }
 
@@ -91,6 +122,7 @@ type Contact struct {
 	Phone         string    `json:"phone"`
 	Locale        string    `json:"locale"`
 	Notes         string    `json:"notes"`
+	Tags          []string  `json:"tags"`
 	EmailOptedOut bool      `json:"email_opted_out"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -104,11 +136,11 @@ type ContactSummary struct {
 	OpenLoans  int   `json:"open_loans"`
 }
 
-const contactCols = `c.id, c.name, coalesce(c.email, ''), coalesce(c.phone_e164, ''), c.locale, c.notes,
+const contactCols = `c.id, c.name, coalesce(c.email, ''), coalesce(c.phone_e164, ''), c.locale, c.notes, c.tags,
 	c.email_opted_out_at IS NOT NULL, c.created_at`
 
 func scanContact(row pgx.Row, c *Contact, extra ...any) error {
-	return row.Scan(append([]any{&c.ID, &c.Name, &c.Email, &c.Phone, &c.Locale, &c.Notes, &c.EmailOptedOut, &c.CreatedAt}, extra...)...)
+	return row.Scan(append([]any{&c.ID, &c.Name, &c.Email, &c.Phone, &c.Locale, &c.Notes, &c.Tags, &c.EmailOptedOut, &c.CreatedAt}, extra...)...)
 }
 
 func nullIfEmpty(s string) *string {
@@ -126,9 +158,9 @@ func (s *Store) CreateContact(ctx context.Context, accountID, userID int64, in C
 	defer tx.Rollback(ctx)
 	var id int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO contacts (account_id, name, email, phone_e164, locale, notes)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		accountID, in.Name, nullIfEmpty(in.Email), nullIfEmpty(in.Phone), in.Locale, in.Notes).Scan(&id); err != nil {
+		INSERT INTO contacts (account_id, name, email, phone_e164, locale, notes, tags)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		accountID, in.Name, nullIfEmpty(in.Email), nullIfEmpty(in.Phone), in.Locale, in.Notes, in.Tags).Scan(&id); err != nil {
 		return 0, err
 	}
 	if err := logActivity(ctx, tx, accountID, 0, id, userID, "contact.created", nil); err != nil {
@@ -145,9 +177,9 @@ func (s *Store) UpdateContact(ctx context.Context, accountID, id int64, in Conta
 	}
 	defer tx.Rollback(ctx)
 	tag, err := tx.Exec(ctx, `
-		UPDATE contacts SET name = $3, email = $4, phone_e164 = $5, locale = $6, notes = $7, updated_at = now()
+		UPDATE contacts SET name = $3, email = $4, phone_e164 = $5, locale = $6, notes = $7, tags = $8, updated_at = now()
 		WHERE account_id = $1 AND id = $2 AND deleted_at IS NULL`,
-		accountID, id, in.Name, nullIfEmpty(in.Email), nullIfEmpty(in.Phone), in.Locale, in.Notes)
+		accountID, id, in.Name, nullIfEmpty(in.Email), nullIfEmpty(in.Phone), in.Locale, in.Notes, in.Tags)
 	if err != nil {
 		return err
 	}
@@ -198,8 +230,8 @@ func (s *Store) GetContact(ctx context.Context, accountID, id int64) (Contact, e
 	return c, err
 }
 
-// ListContacts returns contacts with balances, optionally filtered by a name/email/phone search.
-func (s *Store) ListContacts(ctx context.Context, accountID int64, today Date, q string) ([]ContactSummary, error) {
+// ListContacts returns contacts with balances, optionally filtered by a name/email/phone search and a tag.
+func (s *Store) ListContacts(ctx context.Context, accountID int64, today Date, q, tag string) ([]ContactSummary, error) {
 	rows, err := s.db.Query(ctx, `
 		WITH `+summaryCTE+`
 		SELECT `+contactCols+`,
@@ -211,8 +243,9 @@ func (s *Store) ListContacts(ctx context.Context, accountID int64, today Date, q
 		LEFT JOIN summary s ON s.contact_id = c.id AND s.status = 'active'
 		WHERE c.account_id = $1 AND c.deleted_at IS NULL
 		  AND ($3 = '' OR c.name ILIKE '%' || $3 || '%' OR c.email ILIKE '%' || $3 || '%' OR c.phone_e164 LIKE '%' || $3 || '%')
+		  AND ($4 = '' OR $4 = ANY (c.tags))
 		GROUP BY c.id
-		ORDER BY lower(c.name), c.id`, accountID, today, strings.TrimSpace(q))
+		ORDER BY lower(c.name), c.id`, accountID, today, strings.TrimSpace(q), strings.TrimSpace(tag))
 	if err != nil {
 		return nil, err
 	}
@@ -226,4 +259,15 @@ func (s *Store) ListContacts(ctx context.Context, accountID int64, today Date, q
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ContactTags returns the tags in use across the account's contacts, for filters and suggestions.
+func (s *Store) ContactTags(ctx context.Context, accountID int64) ([]string, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT t FROM contacts, unnest(tags) t
+		WHERE account_id = $1 AND deleted_at IS NULL ORDER BY t`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

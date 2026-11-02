@@ -18,7 +18,8 @@
 </header>
 
 <ContactForm
-	initial={{ name: c.name, email: c.email, phone: c.phone, locale: c.locale, notes: c.notes }}
+	initial={{ name: c.name, email: c.email, phone: c.phone, locale: c.locale, notes: c.notes, tags: c.tags }}
+	tags={data.tags}
 	onsave={async (v) => {
 		await api('PUT', `/contacts/${c.id}`, v);
 		snackbar.show(t('contact_saved'));

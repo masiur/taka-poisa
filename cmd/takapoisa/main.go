@@ -15,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/masiur/taka-poisa/internal/auth"
 	"github.com/masiur/taka-poisa/internal/db"
 	"github.com/masiur/taka-poisa/internal/httpapi"
 	"github.com/masiur/taka-poisa/internal/ledger"
@@ -25,20 +24,16 @@ import (
 )
 
 type config struct {
-	DatabaseURL        string
-	BaseURL            *url.URL
-	ListenAddr         string
-	GoogleClientID     string
-	GoogleClientSecret string
-	SMTP               mail.SMTPConfig
+	DatabaseURL string
+	BaseURL     *url.URL
+	ListenAddr  string
+	SMTP        mail.SMTPConfig
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		ListenAddr:         envOr("LISTEN_ADDR", ":8080"),
-		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
+		ListenAddr:  envOr("LISTEN_ADDR", ":8080"),
 	}
 	if cfg.DatabaseURL == "" {
 		return cfg, errors.New("DATABASE_URL is required")
@@ -48,9 +43,6 @@ func loadConfig() (config, error) {
 		return cfg, errors.New("BASE_URL must be an absolute http(s) URL")
 	}
 	cfg.BaseURL = base
-	if (cfg.GoogleClientID == "") != (cfg.GoogleClientSecret == "") {
-		return cfg, errors.New("set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither")
-	}
 	port, err := strconv.Atoi(envOr("SMTP_PORT", "0"))
 	if err != nil {
 		return cfg, errors.New("SMTP_PORT must be a number")
@@ -73,15 +65,6 @@ func (c config) mailer() (mail.Mailer, error) {
 		return nil, nil
 	}
 	return mail.NewSMTP(c.SMTP)
-}
-
-// google returns the Google sign-in client, or nil when it is not configured.
-func (c config) google() *auth.Google {
-	if c.GoogleClientID == "" {
-		return nil
-	}
-	return auth.NewGoogle(c.GoogleClientID, c.GoogleClientSecret,
-		c.BaseURL.String()+"/api/auth/google/callback", auth.GoogleProduction)
 }
 
 func envOr(key, fallback string) string {
@@ -120,6 +103,10 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	google, err := googleFromEnv(cfg.BaseURL)
+	if err != nil {
+		return err
+	}
 	ledgerStore := ledger.NewStore(pool)
 	worker := &reminders.Worker{DB: pool, Ledger: ledgerStore, Mailer: mailer, BaseURL: cfg.BaseURL.String(), Log: log}
 	go func() {
@@ -137,7 +124,7 @@ func run(log *slog.Logger) error {
 			DB:            pool,
 			SecureCookies: cfg.BaseURL.Scheme == "https",
 			Static:        webui.FS(),
-			Google:        cfg.google(),
+			Google:        google,
 			BaseURL:       cfg.BaseURL.String(),
 			EmailEnabled:  mailer != nil,
 			Log:           log,
@@ -150,7 +137,7 @@ func run(log *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "google_login", cfg.GoogleClientID != "", "email", mailer != nil)
+		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "google_login", google != nil, "email", mailer != nil)
 		errCh <- srv.ListenAndServe()
 	}()
 	select {
