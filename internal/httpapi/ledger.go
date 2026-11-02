@@ -232,7 +232,16 @@ func (s *server) getAgreement(w http.ResponseWriter, r *http.Request, p auth.Pri
 		s.ledgerError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	// Where to send the money, for an open link request (deleted once sent or closed).
+	payout, err := s.ledger.PayoutFor(r.Context(), p.AccountID, id)
+	if err != nil {
+		s.ledgerError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		ledger.AgreementDetail
+		Payout *ledger.Payout `json:"payout"`
+	}{d, payout})
 }
 
 func (s *server) updateAgreement(w http.ResponseWriter, r *http.Request, p auth.Principal) {

@@ -136,6 +136,9 @@ func (s *Store) WithdrawRequest(ctx context.Context, accountID, userID, id int64
 	if err != nil {
 		return err
 	}
+	if a.origin != "request" {
+		return ErrNotFound // only your own outgoing requests can be withdrawn
+	}
 	if a.status != "requested" {
 		return ErrRequestClosed
 	}
@@ -148,11 +151,18 @@ func (s *Store) WithdrawRequest(ctx context.Context, accountID, userID, id int64
 	return tx.Commit(ctx)
 }
 
-// ExpireRequests closes requests past their deadline; the worker calls it every tick.
+// ExpireRequests closes requests past their deadline (outgoing and link requests) and deletes
+// payout details of anything no longer open; the worker calls it every tick.
 func (s *Store) ExpireRequests(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE agreements SET status = 'expired', updated_at = now()
 		WHERE status = 'requested' AND request_expires_at <= now()`)
+	if err != nil {
+		return 0, err
+	}
+	_, err = s.db.Exec(ctx, `
+		DELETE FROM payout_details p USING agreements a
+		WHERE a.id = p.agreement_id AND a.status NOT IN ('requested', 'approved')`)
 	return tag.RowsAffected(), err
 }
 
@@ -336,7 +346,7 @@ func (s *Store) Incoming(ctx context.Context, userID, accountID int64) ([]Incomi
 		SELECT a.id FROM agreements a
 		JOIN contacts c ON c.id = a.contact_id
 		JOIN users u ON u.id = $1 AND u.email_verified_at IS NOT NULL AND u.email = c.email
-		WHERE a.status = 'requested' AND a.request_expires_at > now() AND a.account_id <> $2
+		WHERE a.origin = 'request' AND a.status = 'requested' AND a.request_expires_at > now() AND a.account_id <> $2
 		ORDER BY a.created_at DESC LIMIT 50`, userID, accountID)
 	if err != nil {
 		return nil, err

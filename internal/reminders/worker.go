@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -163,48 +164,17 @@ func (w *Worker) runOutbox(ctx context.Context) (int, error) {
 			finish(it.id, "skipped", "email_not_configured", "", "")
 			continue
 		}
-		n, err := w.Ledger.RequestNotice(ctx, it.accountID, it.agreementID)
-		if errors.Is(err, ledger.ErrNotFound) {
-			finish(it.id, "skipped", "loan_gone", "", "")
-			continue
-		}
+		msg, skip, err := w.composeOutbox(ctx, it.kind, it.accountID, it.agreementID)
 		if err != nil {
 			retry(it, err)
 			continue
 		}
-		n.Kind = it.kind
-		detail, err := w.Ledger.GetAgreement(ctx, it.accountID, it.agreementID, ledger.Today("UTC"))
-		if err != nil {
-			retry(it, err)
+		if skip != "" {
+			finish(it.id, "skipped", skip, "", "")
 			continue
 		}
-		installments := make([]ledger.InstallmentInput, len(detail.Installments))
-		for i, x := range detail.Installments {
-			installments[i] = ledger.InstallmentInput{DueOn: x.DueOn, Amount: x.Amount}
-		}
-
-		var link string
-		if it.kind == "request.created" {
-			if n.Status != "requested" {
-				finish(it.id, "skipped", "closed", "", "")
-				continue
-			}
-			if n.LenderEmail == "" {
-				finish(it.id, "skipped", "no_email", "", "")
-				continue
-			}
-			token, err := w.Ledger.CreateRequestLink(ctx, it.accountID, it.agreementID)
-			if err != nil {
-				retry(it, err)
-				continue
-			}
-			link = w.BaseURL + "/r/" + token
-		} else {
-			link = w.BaseURL + "/loans/" + strconv.FormatInt(it.agreementID, 10)
-		}
-
 		sendCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		id, err := w.Mailer.Send(sendCtx, composeRequest(n, installments, link))
+		id, err := w.Mailer.Send(sendCtx, msg)
 		cancel()
 		if err != nil {
 			retry(it, err)
@@ -302,4 +272,69 @@ func (w *Worker) finish(ctx context.Context, c claimed, status, reason, messageI
 			w.Log.Error("reminders: activity failed", "send_id", c.id, "err", err)
 		}
 	}
+}
+
+// composeOutbox writes the email for one outbox item, or returns why it should be skipped.
+func (w *Worker) composeOutbox(ctx context.Context, kind string, accountID, agreementID int64) (mail.Message, string, error) {
+	detail, err := w.Ledger.GetAgreement(ctx, accountID, agreementID, ledger.Today("UTC"))
+	if errors.Is(err, ledger.ErrNotFound) {
+		return mail.Message{}, "loan_gone", nil
+	}
+	if err != nil {
+		return mail.Message{}, "", err
+	}
+	installments := make([]ledger.InstallmentInput, len(detail.Installments))
+	for i, x := range detail.Installments {
+		installments[i] = ledger.InstallmentInput{DueOn: x.DueOn, Amount: x.Amount}
+	}
+	loanURL := w.BaseURL + "/loans/" + strconv.FormatInt(agreementID, 10)
+
+	if strings.HasPrefix(kind, "link.") {
+		n, err := w.Ledger.LinkNotice(ctx, accountID, agreementID)
+		if errors.Is(err, ledger.ErrNotFound) {
+			return mail.Message{}, "loan_gone", nil
+		}
+		if err != nil {
+			return mail.Message{}, "", err
+		}
+		n.Kind = kind
+		if kind == "link.received" {
+			return composeLink(n, installments, loanURL), "", nil
+		}
+		if n.RequesterEmail == "" {
+			return mail.Message{}, "no_email", nil
+		}
+		link := ""
+		if kind == "link.sent" {
+			token, err := w.Ledger.CreateStatementLink(ctx, accountID, n.ContactID)
+			if err != nil {
+				return mail.Message{}, "", err
+			}
+			link = w.BaseURL + "/s/" + token
+		}
+		return composeLink(n, installments, link), "", nil
+	}
+
+	n, err := w.Ledger.RequestNotice(ctx, accountID, agreementID)
+	if errors.Is(err, ledger.ErrNotFound) {
+		return mail.Message{}, "loan_gone", nil
+	}
+	if err != nil {
+		return mail.Message{}, "", err
+	}
+	n.Kind = kind
+	if kind != "request.created" {
+		return composeRequest(n, installments, loanURL), "", nil
+	}
+	if n.Status != "requested" {
+		return mail.Message{}, "closed", nil
+	}
+	if n.LenderEmail == "" {
+		return mail.Message{}, "no_email", nil
+	}
+	token, err := w.Ledger.CreateRequestLink(ctx, accountID, agreementID)
+	if err != nil {
+		return mail.Message{}, "", err
+	}
+	return composeRequest(n, installments, w.BaseURL+"/r/"+token), "", nil
 }

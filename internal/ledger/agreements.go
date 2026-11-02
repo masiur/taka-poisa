@@ -108,6 +108,10 @@ type AgreementSummary struct {
 	RequestMessage   string     `json:"request_message"`
 	RequestExpiresAt *time.Time `json:"request_expires_at"`
 	DecisionNote     string     `json:"decision_note"`
+	// Link requests: when and how the owner sent the money.
+	SentAt     *time.Time `json:"sent_at"`
+	SentMethod string     `json:"sent_method"`
+	SentRef    string     `json:"sent_ref"`
 }
 
 type Payment struct {
@@ -147,7 +151,8 @@ func (s *Store) ListAgreements(ctx context.Context, accountID int64, today Date,
 		WITH `+summaryCTE+`
 		SELECT s.id, s.contact_id, c.name, s.direction, s.status, a.currency, s.principal, s.paid,
 			s.remaining, s.overdue, a.started_on, a.purpose, s.next_due_on, s.next_amount, a.created_at,
-			a.origin, coalesce(a.request_message, ''), a.request_expires_at, coalesce(a.decision_note, '')
+			a.origin, coalesce(a.request_message, ''), a.request_expires_at, coalesce(a.decision_note, ''),
+			a.sent_at, coalesce(a.sent_method, ''), coalesce(a.sent_ref, '')
 		FROM summary s
 		JOIN agreements a ON a.id = s.id
 		JOIN contacts c ON c.id = s.contact_id
@@ -164,7 +169,8 @@ func (s *Store) ListAgreements(ctx context.Context, accountID int64, today Date,
 		if err := rows.Scan(&a.ID, &a.ContactID, &a.ContactName, &a.Direction, &a.Status, &a.Currency,
 			&a.Principal, &a.Paid, &a.Remaining, &a.Overdue, &a.StartedOn, &a.Purpose,
 			&a.NextDueOn, &a.NextAmount, &a.CreatedAt,
-			&a.Origin, &a.RequestMessage, &a.RequestExpiresAt, &a.DecisionNote); err != nil {
+			&a.Origin, &a.RequestMessage, &a.RequestExpiresAt, &a.DecisionNote,
+			&a.SentAt, &a.SentMethod, &a.SentRef); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -293,7 +299,9 @@ func (s *Store) UpdateTerms(ctx context.Context, accountID, userID, id int64, t 
 	if err != nil {
 		return err
 	}
-	if a.status != "active" && a.status != "settled" {
+	// A request that arrived through a link can be adjusted before it is approved or sent.
+	linkOpen := a.origin == "link" && (a.status == "requested" || a.status == "approved")
+	if a.status != "active" && a.status != "settled" && !linkOpen {
 		return ErrNotActive
 	}
 	paid, err := paidTotal(ctx, tx, id)
@@ -467,13 +475,14 @@ type lockedAgreement struct {
 	status    string
 	principal int64
 	contactID int64
+	origin    string
 }
 
 func lockAgreement(ctx context.Context, tx pgx.Tx, accountID, id int64) (lockedAgreement, error) {
 	var a lockedAgreement
 	err := tx.QueryRow(ctx, `
-		SELECT status, principal, contact_id FROM agreements WHERE account_id = $1 AND id = $2 FOR UPDATE`,
-		accountID, id).Scan(&a.status, &a.principal, &a.contactID)
+		SELECT status, principal, contact_id, origin FROM agreements WHERE account_id = $1 AND id = $2 FOR UPDATE`,
+		accountID, id).Scan(&a.status, &a.principal, &a.contactID, &a.origin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -491,6 +500,9 @@ func paidTotal(ctx context.Context, tx pgx.Tx, agreementID int64) (int64, error)
 // recomputeStatus settles an agreement once confirmed payments cover the principal, and
 // reopens it if they no longer do (a payment deleted, the principal raised).
 func recomputeStatus(ctx context.Context, tx pgx.Tx, accountID, userID, id int64, before lockedAgreement) error {
+	if before.status != "active" && before.status != "settled" {
+		return nil // requests and closed agreements have no payment-driven status
+	}
 	var status string
 	if err := tx.QueryRow(ctx, `
 		UPDATE agreements a SET status = CASE

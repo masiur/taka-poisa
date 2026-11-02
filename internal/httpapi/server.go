@@ -40,6 +40,7 @@ type server struct {
 	emailEnabled  bool
 	secureCookies bool
 	loginLimit    *limiter
+	askLimit      *limiter
 	log           *slog.Logger
 }
 
@@ -54,6 +55,7 @@ func New(cfg Config) http.Handler {
 		emailEnabled:  cfg.EmailEnabled,
 		secureCookies: cfg.SecureCookies,
 		loginLimit:    newLimiter(10, 15*time.Minute),
+		askLimit:      newLimiter(5, askLimitWindow),
 		log:           cfg.Log,
 	}
 
@@ -71,6 +73,7 @@ func New(cfg Config) http.Handler {
 	s.ledgerRoutes(mux)
 	s.reminderRoutes(mux)
 	s.requestRoutes(mux)
+	s.linkRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 	})
