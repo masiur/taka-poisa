@@ -5,7 +5,7 @@ split it into installments, and Taka Poisa emails the other person until it is p
 
 Open source and self-hostable (one binary + PostgreSQL). See [the plan](docs/plan/taka-poisa.md).
 
-> Status: v1 features work: ledger, installments, payments, multiple email reminders, statement links with "I've paid", and loan requests. Next: the hosted version.
+> Status: v1 features work: ledger, installments, payments, multiple email reminders, statement links with "I've paid", loan requests, and request links (people ask you to lend, you mark the money as sent). Next: the hosted version.
 
 ## Self-host with Docker
 

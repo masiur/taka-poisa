@@ -5,6 +5,7 @@
 	import SelectField from '#lib/SelectField.svelte';
 	import TextField from '#lib/TextField.svelte';
 	import Icon from '#lib/Icon.svelte';
+	import RequestLinks from '#lib/RequestLinks.svelte';
 	import RuleEditor from '#lib/RuleEditor.svelte';
 	import { errorText, t, type Key } from '#lib/i18n.svelte.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
@@ -85,6 +86,12 @@
 		</div>
 	</fieldset>
 </form>
+
+<section class="defaults">
+	<h2 class="md-section-title">{t('request_links')}</h2>
+	<p class="md-body-medium md-muted">{t('request_links_hint')}</p>
+	<RequestLinks links={data.links} currency={data.settings.currency} />
+</section>
 
 {#if !readOnly}
 	<section class="defaults">

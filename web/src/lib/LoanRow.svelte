@@ -6,8 +6,11 @@
 
 	let { loan, showContact = true }: { loan: LoanSummary; showContact?: boolean } = $props();
 
+	const asking = $derived(loan.origin === 'link' && (loan.status === 'requested' || loan.status === 'approved'));
 	const title = $derived(
-		showContact
+		asking
+			? t('asks_to_borrow', { name: loan.contact_name, amount: money(loan.principal, loan.currency) })
+			: showContact
 			? t(loan.direction === 'lent' ? 'lent_to' : 'borrowed_from', { name: loan.contact_name })
 			: (loan.direction === 'lent' ? t('i_lent') : t('i_borrowed')) + ' · ' + money(loan.principal, loan.currency)
 	);
@@ -18,7 +21,9 @@
 	<span class="md-list__main">
 		<span class="md-body-large">{title}</span>
 		<span class="md-body-medium md-muted">
-			{#if loan.status === 'active' && loan.next_due_on}
+			{#if asking}
+				{loan.request_message || loan.purpose || day(loan.started_on)}
+			{:else if loan.status === 'active' && loan.next_due_on}
 				{t('next_due', { amount: money(loan.next_amount, loan.currency), date: day(loan.next_due_on) })}
 			{:else}
 				{loan.purpose || day(loan.started_on)}
@@ -26,7 +31,10 @@
 		</span>
 	</span>
 	<span class="md-list__trailing">
-		{#if loan.status === 'active'}
+		{#if asking}
+			<span class="md-title-medium">{money(loan.principal, loan.currency)}</span>
+			<StatusChip status={loan.status} />
+		{:else if loan.status === 'active'}
 			<span class="md-title-medium" class:md-money-in={loan.direction === 'lent'}>{money(loan.remaining, loan.currency)}</span>
 			{#if loan.overdue > 0}<StatusChip status="overdue" />{/if}
 		{:else}

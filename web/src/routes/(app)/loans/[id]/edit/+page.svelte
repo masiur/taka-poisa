@@ -3,6 +3,7 @@
 	import { api } from '#lib/api.js';
 	import Icon from '#lib/Icon.svelte';
 	import LoanForm, { emptyLoan, type LoanValues } from '#lib/LoanForm.svelte';
+	import { emptyPlan } from '#lib/PlanFields.svelte';
 	import { t } from '#lib/i18n.svelte.js';
 	import { toInput } from '#lib/money.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
@@ -20,10 +21,13 @@
 			amount: toInput(loan.principal, loan.currency),
 			startedOn: loan.started_on,
 			purpose: loan.purpose,
-			plan: items.length === 1 ? 'one' : 'installments',
-			dueDate: items[0]?.due_on ?? loan.started_on,
-			count: String(items.length),
-			firstDue: items[0]?.due_on ?? loan.started_on
+			plan: {
+				...emptyPlan(),
+				kind: items.length === 1 ? 'one' : 'installments',
+				dueDate: items[0]?.due_on ?? loan.started_on,
+				count: String(items.length),
+				firstDue: items[0]?.due_on ?? loan.started_on
+			}
 		};
 	}
 </script>

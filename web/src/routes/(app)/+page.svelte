@@ -65,6 +65,13 @@
 	</ul>
 {/if}
 
+{#if data.linkRequests.length > 0}
+	<h2 class="md-section-title">{t('link_requests')}</h2>
+	<ul class="md-list incoming">
+		{#each data.linkRequests as loan (loan.id)}<li><LoanRow {loan} /></li>{/each}
+	</ul>
+{/if}
+
 {#if data.sentRequests.length > 0}
 	<h2 class="md-section-title">{t('your_requests')}</h2>
 	<ul class="md-list">

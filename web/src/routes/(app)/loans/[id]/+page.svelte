@@ -18,6 +18,8 @@
 	const loan = $derived(data.loan);
 	const active = $derived(loan.status === 'active');
 	const editable = $derived(loan.status === 'active' || loan.status === 'settled');
+	// Someone asked me to lend through a link and I haven't sent the money yet.
+	const linkOpen = $derived(loan.origin === 'link' && (loan.status === 'requested' || loan.status === 'approved'));
 	const progress = $derived(loan.principal ? Math.round((loan.paid / loan.principal) * 100) : 0);
 	const methods = ['cash', 'bkash', 'nagad', 'rocket', 'bank', 'card', 'other'];
 	const claims = $derived(loan.payments.filter((p) => p.status === 'pending'));
@@ -105,6 +107,39 @@
 		}
 	}
 
+	// Link requests: approve, mark as sent, decline, block.
+	let sentOpen = $state(false);
+	let sentForm = $state({ method: 'bkash', ref: '', sentOn: todayISO() });
+	let sentFields = $state<Record<string, string>>({});
+	let declineOpen = $state(false);
+	let declineNote = $state('');
+	let blockOpen = $state(false);
+
+	async function linkAction(path: string, body: unknown, done: string) {
+		try {
+			await api('POST', `/agreements/${loan.id}/${path}`, body);
+			snackbar.show(done);
+			await refreshAll();
+			return true;
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'validation') sentFields = err.fields;
+			else snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+			return false;
+		}
+	}
+
+	function openSent() {
+		const m = loan.payout?.method;
+		sentForm = { method: m && m !== 'cash' ? m : 'cash', ref: '', sentOn: todayISO() };
+		sentFields = {};
+		sentOpen = true;
+	}
+
+	async function copy(text: string) {
+		await navigator.clipboard.writeText(text);
+		snackbar.show(t('copied'));
+	}
+
 	async function withdraw() {
 		try {
 			await api('POST', `/agreements/${loan.id}/withdraw`);
@@ -138,8 +173,12 @@
 
 <header class="md-page-header">
 	<a href="/contacts/{loan.contact_id}" class="md-icon-button md-state" aria-label={t('back')}><Icon name="arrow_back" /></a>
-	<h1 class="md-headline-small">{t(loan.direction === 'lent' ? 'lent_to' : 'borrowed_from', { name: loan.contact_name })}</h1>
-	{#if editable}
+	<h1 class="md-headline-small">
+		{linkOpen
+			? t('asks_to_borrow', { name: loan.contact_name, amount: money(loan.principal, loan.currency) })
+			: t(loan.direction === 'lent' ? 'lent_to' : 'borrowed_from', { name: loan.contact_name })}
+	</h1>
+	{#if editable || linkOpen}
 		<a href="/loans/{loan.id}/edit" class="md-icon-button md-state" aria-label={t('edit_loan')} title={t('edit_loan')}><Icon name="edit" /></a>
 	{/if}
 </header>
@@ -161,6 +200,42 @@
 	</section>
 {/if}
 
+{#if loan.origin === 'link' && loan.status !== 'active' && loan.status !== 'settled'}
+	<section class="link_request">
+		{#if loan.request_message}<p class="md-body-large">“{loan.request_message}”</p>{/if}
+		{#if loan.status === 'approved'}<p class="md-note">{t('approved_note')}</p>{/if}
+		{#if loan.status === 'declined'}<p class="md-note">{t('request_declined')}{loan.decision_note ? ` · “${loan.decision_note}”` : ''}</p>{/if}
+		{#if loan.status === 'expired'}<p class="md-note">{t('request_expired_note', { date: day((loan.request_expires_at ?? '').slice(0, 10)) })}</p>{/if}
+
+		{#if loan.payout}
+			<div class="payout">
+				<p class="md-label-large">{t('send_to_them')}: {t(`payout_${loan.payout.method}` as Key)}</p>
+				{#each [['account_name', loan.payout.account_name], ['account_number', loan.payout.account_number], ['bank_name', loan.payout.bank_name], ['branch', loan.payout.branch], ['routing_number', loan.payout.routing_number]] as [key, value] (key)}
+					{#if value}
+						<div class="payout__row">
+							<span class="md-body-small md-muted">{t((key === 'account_number' && loan.payout.method !== 'bank' ? 'wallet_number' : key) as Key)}</span>
+							<span class="md-title-medium">{value}</span>
+							<button type="button" class="md-icon-button md-state" title={t('copy_link')} aria-label="{t('copied')}: {value}" onclick={() => copy(value)}><Icon name="content_copy" size={20} /></button>
+						</div>
+					{/if}
+				{/each}
+				<p class="md-body-small md-muted">{t('payout_private')}</p>
+			</div>
+		{/if}
+
+		{#if linkOpen}
+			<div class="link_actions">
+				<button type="button" class="md-button md-button--filled md-state" onclick={openSent}><Icon name="send" size={18} />{t('mark_sent')}</button>
+				{#if loan.status === 'requested'}
+					<button type="button" class="md-button md-button--tonal md-state" onclick={() => linkAction('approve', { note: '' }, t('approved_note'))}><Icon name="check" size={18} />{t('approve')}</button>
+				{/if}
+				<button type="button" class="md-button md-button--text md-state" onclick={() => { declineNote = ''; declineOpen = true; }}>{t('decline')}</button>
+				<button type="button" class="md-button md-button--text md-state danger" onclick={() => (blockOpen = true)}>{t('block_requester')}</button>
+			</div>
+		{/if}
+	</section>
+{/if}
+
 <section class="summary">
 	<div class="summary__top">
 		<div>
@@ -173,6 +248,9 @@
 		<span style:width="{progress}%"></span>
 	</div>
 	{#if loan.purpose}<p class="md-body-medium">{loan.purpose}</p>{/if}
+	{#if loan.sent_at}
+		<p class="md-body-small md-muted">{t('sent_via', { method: t(`method_${loan.sent_method}` as Key), ref: loan.sent_ref ? ` · ${loan.sent_ref}` : '', date: day(loan.started_on) })}</p>
+	{/if}
 	<p class="md-body-small md-muted">{t('start_date')}: {day(loan.started_on)}</p>
 	{#if active}
 		<div class="actions">
@@ -219,7 +297,7 @@
 {/if}
 
 <!-- A request that never became a loan has no payments to show. -->
-{#if !(loan.origin === 'request' && !editable)}
+{#if !((loan.origin === 'request' || loan.origin === 'link') && !editable)}
 <h2 class="md-section-title">{t('payments')}</h2>
 {#if payments.length === 0}
 	<p class="md-body-medium md-muted">{t('no_payments')}</p>
@@ -338,6 +416,44 @@
 	{/snippet}
 </Dialog>
 
+<Dialog bind:open={sentOpen} title={t('mark_sent_title')}>
+	<p class="md-body-small">{t('mark_sent_hint')}</p>
+	<form id="sent_form" class="md-form" novalidate onsubmit={async (e) => {
+		e.preventDefault();
+		if (await linkAction('mark-sent', { method: sentForm.method, ref: sentForm.ref, sent_on: sentForm.sentOn }, t('request_marked_sent'))) sentOpen = false;
+	}}>
+		<SelectField id="sent_method" label={t('method')} bind:value={sentForm.method} error={sentFields.method}>
+			{#each methods as m (m)}<option value={m}>{t(`method_${m}` as Key)}</option>{/each}
+		</SelectField>
+		<TextField id="sent_ref" label={t('ref')} bind:value={sentForm.ref} error={sentFields.ref} maxlength={100} />
+		<TextField id="sent_on" label={t('sent_on')} type="date" bind:value={sentForm.sentOn} error={sentFields.sent_on} required />
+	</form>
+	{#snippet actions()}
+		<button type="button" class="md-button md-button--text md-state" onclick={() => (sentOpen = false)}>{t('cancel')}</button>
+		<button type="submit" form="sent_form" class="md-button md-button--filled md-state">{t('mark_sent')}</button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={declineOpen} title={t('decline_title')}>
+	<TextField id="decline_note" label={t('decision_note', { name: loan.contact_name })} multiline bind:value={declineNote} maxlength={500} />
+	{#snippet actions()}
+		<button type="button" class="md-button md-button--text md-state" onclick={() => (declineOpen = false)}>{t('cancel')}</button>
+		<button type="button" class="md-button md-button--filled md-state" onclick={async () => {
+			if (await linkAction('decline', { note: declineNote }, t('request_declined'))) declineOpen = false;
+		}}>{t('decline')}</button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={blockOpen} title={t('block_title', { name: loan.contact_name })}>
+	<p class="md-body-medium">{t('block_body')}</p>
+	{#snippet actions()}
+		<button type="button" class="md-button md-button--text md-state" onclick={() => (blockOpen = false)}>{t('cancel')}</button>
+		<button type="button" class="md-button md-button--filled md-state" onclick={async () => {
+			if (await linkAction('block', {}, t('blocked'))) blockOpen = false;
+		}}>{t('block_requester')}</button>
+	{/snippet}
+</Dialog>
+
 <Dialog bind:open={deleteOpen} title={t('delete_payment')}>
 	{#if deleting}<p class="md-body-medium">{t('delete_payment_body', { amount: money(deleting.amount, loan.currency), date: day(deleting.paid_on) })}</p>{/if}
 	{#if confirmError}<Alert message={confirmError} />{/if}
@@ -359,6 +475,35 @@
 <style>
 	.request_note {
 		margin-bottom: 16px;
+	}
+
+	.link_request {
+		display: grid;
+		gap: 12px;
+		margin-bottom: 16px;
+	}
+
+	.payout {
+		display: grid;
+		gap: 4px;
+		padding: 16px;
+		border-radius: var(--md-sys-shape-lg);
+		background: var(--md-sys-color-primary-container);
+		color: var(--md-sys-color-on-primary-container);
+	}
+
+	.payout__row {
+		display: grid;
+		grid-template-columns: minmax(96px, auto) 1fr auto;
+		align-items: center;
+		gap: 8px;
+		overflow-wrap: anywhere;
+	}
+
+	.link_actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.request_note p {

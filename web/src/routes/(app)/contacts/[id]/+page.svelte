@@ -8,6 +8,7 @@
 	import LoanRow from '#lib/LoanRow.svelte';
 	import { initial, money } from '#lib/format.svelte.js';
 	import { errorText, t } from '#lib/i18n.svelte.js';
+	import { shareOrCopy } from '#lib/share.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
 
 	let { data } = $props();
@@ -23,12 +24,17 @@
 	async function shareLink() {
 		try {
 			const { url } = await api<{ url: string }>('POST', `/contacts/${c.id}/statement-link`);
-			if (navigator.share) {
-				await navigator.share({ title: c.name, url }).catch(() => {});
-			} else {
-				await navigator.clipboard.writeText(url);
-				snackbar.show(t('link_copied'));
-			}
+			if (await shareOrCopy(url, c.name)) snackbar.show(t('link_copied'));
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		}
+	}
+
+	// A request link only this contact uses (the same one each time).
+	async function grantLink() {
+		try {
+			const { url } = await api<{ url: string }>('POST', '/request-links', { contact_id: c.id });
+			if (await shareOrCopy(url, t('ask_page_title', { owner: data.me?.user.name ?? '' }))) snackbar.show(t('link_ready', { name: c.name }));
 		} catch (err) {
 			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
 		}
@@ -64,7 +70,10 @@
 		{#if c.phone}<a href="tel:{c.phone}" class="profile__line"><Icon name="call" size={18} />{c.phone}</a>{/if}
 		{#if c.email}<a href="mailto:{c.email}" class="profile__line"><Icon name="mail" size={18} />{c.email}</a>{/if}
 		{#if c.notes}<p class="md-muted notes">{c.notes}</p>{/if}
-		<button type="button" class="md-button md-button--outlined md-state share" onclick={shareLink}><Icon name="link" size={18} />{t('share_statement')}</button>
+		<div class="share">
+			<button type="button" class="md-button md-button--outlined md-state" onclick={shareLink}><Icon name="link" size={18} />{t('share_statement')}</button>
+			<button type="button" class="md-button md-button--outlined md-state" onclick={grantLink}><Icon name="send" size={18} />{t('grant_link')}</button>
+		</div>
 	</div>
 </section>
 
@@ -135,7 +144,9 @@
 	}
 
 	.share {
-		justify-self: start;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 		margin-top: 8px;
 	}
 

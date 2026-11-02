@@ -121,6 +121,26 @@ creates the lender's `lent` agreement directly in their book.
 - Rate limits: max 10 open requests per account, max 3 requests per lender email per 7 days (stops spam/harassment).
 - The lender can click "Don't send me requests from this person" (blocks that account → that email).
 
+## Request links (built)
+
+Anyone can ask *me* to lend money through a link I share (the reverse of a loan request).
+
+- **Links**: one or more general links ("anyone with the link"), plus a link granted to a specific contact
+  (pre-fills their details; granting again returns the same link). Optional maximum amount. Revocable.
+- **Form (no account)**: name, email (required, for the answer), phone, amount, date needed, purpose,
+  repayment plan with live preview, message, and where to receive the money: bKash / Nagad / Rocket number,
+  bank details (account name, number, bank, branch, routing), or cash.
+- **Contacts both ways**: the requester becomes my contact on submit (matched by email, or the granted contact).
+  If they have a **verified** account on this server, I'm added to their contacts too, and when I mark the
+  money as sent they get a "borrowed" copy of the loan.
+- **My side**: "Requests to lend" on Home. Approve (optional, tells them it's coming), **Mark as sent**
+  (method, transaction ID, date; the loan starts that day and reminders begin), Decline (with a note), Block.
+  Amount and schedule can be adjusted before sending.
+- **Payout details** are shown only to me, never emailed, and deleted once sent, declined, blocked or expired.
+- **Spam**: hidden honeypot field, 5 submissions per IP per hour, 3 per email per week, 20 open per account,
+  block list (blocking closes the request silently and removes a contact with no other records).
+- **Emails**: to me when a request arrives; to them when approved, declined, or sent (with their statement link).
+
 ## Data model (PostgreSQL)
 
 All tenant tables carry `account_id`; on hosted, RLS policies enforce `account_id = current_setting('app.account_id')`.

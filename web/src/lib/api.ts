@@ -61,7 +61,7 @@ export type ContactSummary = Contact & {
 };
 
 export type Direction = 'lent' | 'borrowed';
-export type LoanStatus = 'requested' | 'active' | 'settled' | 'declined' | 'expired' | 'cancelled';
+export type LoanStatus = 'requested' | 'approved' | 'active' | 'settled' | 'declined' | 'expired' | 'cancelled';
 export type InstallmentStatus = 'paid' | 'partial' | 'overdue' | 'due_today' | 'upcoming';
 
 export type LoanSummary = {
@@ -79,10 +79,13 @@ export type LoanSummary = {
 	purpose: string;
 	next_due_on: string | null;
 	next_amount: number;
-	origin: 'manual' | 'request';
+	origin: 'manual' | 'request' | 'link';
 	request_message: string;
 	request_expires_at: string | null;
 	decision_note: string;
+	sent_at: string | null;
+	sent_method: string;
+	sent_ref: string;
 };
 
 export type Installment = {
@@ -113,10 +116,20 @@ export type Activity = {
 	created_at: string;
 };
 
+export type Payout = {
+	method: 'bkash' | 'nagad' | 'rocket' | 'bank' | 'cash';
+	account_name: string;
+	account_number: string;
+	bank_name: string;
+	branch: string;
+	routing_number: string;
+};
+
 export type LoanDetail = LoanSummary & {
 	installments: Installment[];
 	payments: Payment[];
 	activity: Activity[];
+	payout: Payout | null;
 };
 
 export type DueItem = {
@@ -202,4 +215,26 @@ export type RequestView = {
 	locale: 'bn' | 'en';
 	installments: { due_on: string; amount: number }[];
 	decision_note: string;
+};
+
+export type RequestLink = {
+	id: number;
+	token: string;
+	url: string;
+	label: string;
+	contact_id: number | null;
+	contact_name: string;
+	max_amount: number | null;
+	open_count: number;
+};
+
+export type LinkInfo = {
+	owner_name: string;
+	account_name: string;
+	currency: string;
+	locale: 'bn' | 'en';
+	max_amount: number | null;
+	name: string;
+	email: string;
+	phone: string;
 };

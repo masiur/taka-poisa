@@ -14,6 +14,7 @@
 		settled: 'success',
 		cancelled: 'neutral',
 		requested: 'warning',
+		approved: 'info',
 		declined: 'neutral',
 		expired: 'neutral'
 	};
