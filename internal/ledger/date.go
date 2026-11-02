@@ -37,12 +37,15 @@ func Today(tz string) Date {
 	return NewDate(y, m, d)
 }
 
-func (d Date) IsZero() bool            { return d.t.IsZero() }
-func (d Date) String() string          { return d.t.Format(dateLayout) }
-func (d Date) Before(o Date) bool      { return d.t.Before(o.t) }
-func (d Date) AddDays(n int) Date      { return Date{d.t.AddDate(0, 0, n)} }
-func (d Date) Year() int               { return d.t.Year() }
-func (d Date) Time() time.Time         { return d.t }
+func (d Date) IsZero() bool       { return d.t.IsZero() }
+func (d Date) String() string     { return d.t.Format(dateLayout) }
+func (d Date) Before(o Date) bool { return d.t.Before(o.t) }
+func (d Date) AddDays(n int) Date { return Date{d.t.AddDate(0, 0, n)} }
+func (d Date) Year() int          { return d.t.Year() }
+func (d Date) Time() time.Time    { return d.t }
+
+// DaysBefore is how many days d is before o (negative if after).
+func (d Date) DaysBefore(o Date) int { return int(o.t.Sub(d.t) / (24 * time.Hour)) }
 
 // AddMonthsClamped adds n months keeping day as the target day, clamped to the month's
 // last day: Jan 31 + 1 month = Feb 28 (or 29), + 2 months = Mar 31.

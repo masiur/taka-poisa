@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,9 @@ import (
 	"github.com/masiur/taka-poisa/internal/auth"
 	"github.com/masiur/taka-poisa/internal/db"
 	"github.com/masiur/taka-poisa/internal/httpapi"
+	"github.com/masiur/taka-poisa/internal/ledger"
+	"github.com/masiur/taka-poisa/internal/mail"
+	"github.com/masiur/taka-poisa/internal/reminders"
 	"github.com/masiur/taka-poisa/internal/webui"
 )
 
@@ -26,6 +30,7 @@ type config struct {
 	ListenAddr         string
 	GoogleClientID     string
 	GoogleClientSecret string
+	SMTP               mail.SMTPConfig
 }
 
 func loadConfig() (config, error) {
@@ -46,7 +51,28 @@ func loadConfig() (config, error) {
 	if (cfg.GoogleClientID == "") != (cfg.GoogleClientSecret == "") {
 		return cfg, errors.New("set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither")
 	}
+	port, err := strconv.Atoi(envOr("SMTP_PORT", "0"))
+	if err != nil {
+		return cfg, errors.New("SMTP_PORT must be a number")
+	}
+	cfg.SMTP = mail.SMTPConfig{
+		Host:     os.Getenv("SMTP_HOST"),
+		Port:     port,
+		Username: os.Getenv("SMTP_USERNAME"),
+		Password: os.Getenv("SMTP_PASSWORD"),
+		From:     os.Getenv("SMTP_FROM"),
+		FromName: envOr("SMTP_FROM_NAME", "Taka Poisa"),
+		TLS:      os.Getenv("SMTP_TLS"),
+	}
 	return cfg, nil
+}
+
+// mailer returns the SMTP mailer, or nil when SMTP_HOST is unset (reminders are then skipped).
+func (c config) mailer() (mail.Mailer, error) {
+	if c.SMTP.Host == "" {
+		return nil, nil
+	}
+	return mail.NewSMTP(c.SMTP)
 }
 
 // google returns the Google sign-in client, or nil when it is not configured.
@@ -90,6 +116,13 @@ func run(log *slog.Logger) error {
 	if err := db.Migrate(ctx, pool); err != nil {
 		return err
 	}
+	mailer, err := cfg.mailer()
+	if err != nil {
+		return err
+	}
+	ledgerStore := ledger.NewStore(pool)
+	worker := &reminders.Worker{DB: pool, Ledger: ledgerStore, Mailer: mailer, BaseURL: cfg.BaseURL.String(), Log: log}
+	go worker.Run(ctx)
 
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
@@ -98,6 +131,8 @@ func run(log *slog.Logger) error {
 			SecureCookies: cfg.BaseURL.Scheme == "https",
 			Static:        webui.FS(),
 			Google:        cfg.google(),
+			BaseURL:       cfg.BaseURL.String(),
+			EmailEnabled:  mailer != nil,
 			Log:           log,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -108,7 +143,7 @@ func run(log *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "google_login", cfg.GoogleClientID != "")
+		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "google_login", cfg.GoogleClientID != "", "email", mailer != nil)
 		errCh <- srv.ListenAndServe()
 	}()
 	select {

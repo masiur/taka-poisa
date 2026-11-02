@@ -137,15 +137,27 @@ func (s *Store) CreateContact(ctx context.Context, accountID, userID int64, in C
 	return id, tx.Commit(ctx)
 }
 
+// UpdateContact saves the contact and replans their reminders (the email may have changed).
 func (s *Store) UpdateContact(ctx context.Context, accountID, id int64, in ContactInput) error {
-	tag, err := s.db.Exec(ctx, `
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE contacts SET name = $3, email = $4, phone_e164 = $5, locale = $6, notes = $7, updated_at = now()
 		WHERE account_id = $1 AND id = $2 AND deleted_at IS NULL`,
 		accountID, id, in.Name, nullIfEmpty(in.Email), nullIfEmpty(in.Phone), in.Locale, in.Notes)
-	if err == nil && tag.RowsAffected() == 0 {
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return err
+	if err := replanContact(ctx, tx, accountID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // DeleteContact hides a contact. It is refused while they have open (active or requested) agreements,

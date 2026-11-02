@@ -260,6 +260,12 @@ func (s *Store) CreateAgreement(ctx context.Context, accountID, userID int64, cu
 	if err := insertInstallments(ctx, tx, id, items); err != nil {
 		return 0, err
 	}
+	if err := copyDefaultRules(ctx, tx, accountID, id); err != nil {
+		return 0, err
+	}
+	if err := replan(ctx, tx, accountID, id); err != nil {
+		return 0, err
+	}
 	if err := logActivity(ctx, tx, accountID, id, in.ContactID, userID, "agreement.created", map[string]any{
 		"principal": in.Principal, "installments": len(items), "direction": in.Direction,
 	}); err != nil {
@@ -309,6 +315,9 @@ func (s *Store) UpdateTerms(ctx context.Context, accountID, userID, id int64, t 
 	if err := recomputeStatus(ctx, tx, accountID, userID, id, a); err != nil {
 		return err
 	}
+	if err := replan(ctx, tx, accountID, id); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -330,6 +339,9 @@ func (s *Store) CancelAgreement(ctx context.Context, accountID, userID, id int64
 		return err
 	}
 	if err := logActivity(ctx, tx, accountID, id, a.contactID, userID, "agreement.cancelled", nil); err != nil {
+		return err
+	}
+	if err := replan(ctx, tx, accountID, id); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -402,6 +414,9 @@ func (s *Store) AddPayment(ctx context.Context, accountID, userID, agreementID i
 	if err := recomputeStatus(ctx, tx, accountID, userID, agreementID, a); err != nil {
 		return 0, err
 	}
+	if err := replan(ctx, tx, accountID, agreementID); err != nil {
+		return 0, err
+	}
 	return id, tx.Commit(ctx)
 }
 
@@ -433,6 +448,9 @@ func (s *Store) DeletePayment(ctx context.Context, accountID, userID, agreementI
 		return err
 	}
 	if err := recomputeStatus(ctx, tx, accountID, userID, agreementID, a); err != nil {
+		return err
+	}
+	if err := replan(ctx, tx, accountID, agreementID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

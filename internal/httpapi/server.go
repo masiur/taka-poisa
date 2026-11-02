@@ -22,9 +22,11 @@ const sessionCookie = "tp_session"
 
 type Config struct {
 	DB            *pgxpool.Pool
-	SecureCookies bool  // true when BASE_URL is https
+	SecureCookies bool         // true when BASE_URL is https
 	Static        fs.FS        // built web UI
 	Google        *auth.Google // nil when Google sign-in is not configured
+	BaseURL       string       // public URL, for links handed out (statement pages)
+	EmailEnabled  bool         // SMTP configured; shown to the owner next to reminders
 	Log           *slog.Logger
 }
 
@@ -34,6 +36,8 @@ type server struct {
 	accounts      *account.Store
 	ledger        *ledger.Store
 	google        *auth.Google
+	baseURL       string
+	emailEnabled  bool
 	secureCookies bool
 	loginLimit    *limiter
 	log           *slog.Logger
@@ -46,6 +50,8 @@ func New(cfg Config) http.Handler {
 		accounts:      account.NewStore(cfg.DB),
 		ledger:        ledger.NewStore(cfg.DB),
 		google:        cfg.Google,
+		baseURL:       cfg.BaseURL,
+		emailEnabled:  cfg.EmailEnabled,
 		secureCookies: cfg.SecureCookies,
 		loginLimit:    newLimiter(10, 15*time.Minute),
 		log:           cfg.Log,
@@ -63,6 +69,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/account", s.requireAuth(s.getAccount))
 	mux.HandleFunc("PUT /api/account", s.requireAuth(s.putAccount))
 	s.ledgerRoutes(mux)
+	s.reminderRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 	})
@@ -252,6 +259,11 @@ func (s *server) putAccount(w http.ResponseWriter, r *http.Request, p auth.Princ
 		return
 	}
 	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	// Timezone or send hour may have changed: move planned reminders.
+	if err := s.ledger.ReplanAccount(r.Context(), p.AccountID); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
