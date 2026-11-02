@@ -605,6 +605,11 @@ select.md-field__input option {
 	border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
+/* Static rows (not links) don't need the rounded hover shape, which would curve the hairline. */
+.md-list > li.md-list__item {
+	border-radius: 0;
+}
+
 .md-list__main {
 	flex: 1;
 	min-width: 0;
@@ -690,4 +695,28 @@ textarea.md-field__input {
 .md-field--multiline.md-field--populated .md-field__label,
 .md-field--multiline .md-field__box:focus-within .md-field__label {
 	top: 0;
+}
+
+/* Assist chip used as a button (presets) */
+.md-chip-button {
+	height: 32px;
+	padding: 0 16px;
+	border: 1px solid var(--md-sys-color-outline);
+	border-radius: var(--md-sys-shape-sm);
+	background: transparent;
+	color: var(--md-sys-color-on-surface);
+	font: 500 0.875rem/1.25rem var(--md-sys-typeface);
+	cursor: pointer;
+}
+
+/* Informational note (tonal, not an error) */
+.md-note {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 12px 16px;
+	border-radius: var(--md-sys-shape-md);
+	background: var(--md-sys-color-surface-container);
+	color: var(--md-sys-color-on-surface-variant);
+	font: 400 0.875rem/1.25rem var(--md-sys-typeface);
 }

@@ -5,6 +5,7 @@
 	import SelectField from '#lib/SelectField.svelte';
 	import TextField from '#lib/TextField.svelte';
 	import Icon from '#lib/Icon.svelte';
+	import RuleEditor from '#lib/RuleEditor.svelte';
 	import { errorText, t, type Key } from '#lib/i18n.svelte.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
 
@@ -85,6 +86,21 @@
 	</fieldset>
 </form>
 
+{#if !readOnly}
+	<section class="defaults">
+		<h2 class="md-section-title">{t('default_reminders')}</h2>
+		<p class="md-body-medium md-muted">{t('default_reminders_hint')}</p>
+		<RuleEditor
+			rules={data.defaultRules}
+			defaultHour={data.settings.send_hour}
+			onsave={async (rules) => {
+				await api('PUT', '/account/reminder-defaults', { rules });
+				snackbar.show(t('reminders_saved'));
+			}}
+		/>
+	</section>
+{/if}
+
 <section class="export">
 	<h2 class="md-section-title">{t('export')}</h2>
 	<p class="md-body-medium md-muted">{t('export_hint')}</p>
@@ -103,8 +119,14 @@
 		margin-top: 24px;
 	}
 
-	.export {
+	.export,
+	.defaults {
 		margin-top: 16px;
+		max-width: 560px;
+	}
+
+	.defaults p {
+		margin-bottom: 12px;
 	}
 
 	.export__links {

@@ -283,6 +283,38 @@ func replanContact(ctx context.Context, tx pgx.Tx, accountID, contactID int64) e
 	return nil
 }
 
+// ReplanAll refreshes every active agreement, one transaction each. It runs at startup so plans
+// made by an older version (or none at all, right after an upgrade) are brought up to date.
+func (s *Store) ReplanAll(ctx context.Context) (int, error) {
+	rows, err := s.db.Query(ctx, `SELECT account_id, id FROM agreements WHERE status = 'active' ORDER BY id`)
+	if err != nil {
+		return 0, err
+	}
+	type ref struct{ account, id int64 }
+	refs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (ref, error) {
+		var x ref
+		return x, r.Scan(&x.account, &x.id)
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, r := range refs {
+		tx, err := s.db.Begin(ctx)
+		if err != nil {
+			return 0, err
+		}
+		err = replan(ctx, tx, r.account, r.id)
+		if err == nil {
+			err = tx.Commit(ctx)
+		}
+		tx.Rollback(ctx)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return len(refs), nil
+}
+
 // ReplanAccount refreshes all active agreements, after the timezone or send hour changes.
 func (s *Store) ReplanAccount(ctx context.Context, accountID int64) error {
 	tx, err := s.db.Begin(ctx)

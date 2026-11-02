@@ -22,6 +22,14 @@
 	import search from '@material-symbols/svg-400/outlined/search.svg?raw';
 	import settings from '@material-symbols/svg-400/outlined/settings.svg?raw';
 	import settingsFill from '@material-symbols/svg-400/outlined/settings-fill.svg?raw';
+	import contentCopy from '@material-symbols/svg-400/outlined/content_copy.svg?raw';
+	import link from '@material-symbols/svg-400/outlined/link.svg?raw';
+	import notifications from '@material-symbols/svg-400/outlined/notifications.svg?raw';
+	import notificationsOff from '@material-symbols/svg-400/outlined/notifications_off.svg?raw';
+	import pause from '@material-symbols/svg-400/outlined/pause.svg?raw';
+	import playArrow from '@material-symbols/svg-400/outlined/play_arrow.svg?raw';
+	import schedule from '@material-symbols/svg-400/outlined/schedule.svg?raw';
+	import send from '@material-symbols/svg-400/outlined/send.svg?raw';
 	import visibility from '@material-symbols/svg-400/outlined/visibility.svg?raw';
 	import visibilityOff from '@material-symbols/svg-400/outlined/visibility_off.svg?raw';
 
@@ -48,6 +56,14 @@
 		search,
 		settings,
 		'settings-fill': settingsFill,
+		content_copy: contentCopy,
+		link,
+		notifications,
+		notifications_off: notificationsOff,
+		pause,
+		play_arrow: playArrow,
+		schedule,
+		send,
 		visibility,
 		visibility_off: visibilityOff
 	};

@@ -4,12 +4,13 @@
 	import Alert from '#lib/Alert.svelte';
 	import Dialog from '#lib/Dialog.svelte';
 	import Icon from '#lib/Icon.svelte';
+	import RuleEditor from '#lib/RuleEditor.svelte';
 	import SelectField from '#lib/SelectField.svelte';
 	import StatusChip from '#lib/StatusChip.svelte';
 	import TextField from '#lib/TextField.svelte';
 	import { todayISO } from '#lib/dates.js';
-	import { day, money } from '#lib/format.svelte.js';
-	import { errorText, t, type Key } from '#lib/i18n.svelte.js';
+	import { day, money, num } from '#lib/format.svelte.js';
+	import { errorText, i18n, t, type Key } from '#lib/i18n.svelte.js';
 	import { toInput, toMinor } from '#lib/money.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
 
@@ -19,6 +20,34 @@
 	const editable = $derived(loan.status === 'active' || loan.status === 'settled');
 	const progress = $derived(loan.principal ? Math.round((loan.paid / loan.principal) * 100) : 0);
 	const methods = ['cash', 'bkash', 'nagad', 'rocket', 'bank', 'card', 'other'];
+	const claims = $derived(loan.payments.filter((p) => p.status === 'pending'));
+	const payments = $derived(loan.payments.filter((p) => p.status !== 'pending'));
+	const rem = $derived(data.reminders);
+	const contactReachable = $derived(rem.direction === 'lent' && !!rem.contact_email && !rem.contact_opted_out);
+
+	async function resolveClaim(p: Payment, confirm: boolean) {
+		try {
+			await api('POST', `/agreements/${loan.id}/payments/${p.id}/${confirm ? 'confirm' : 'reject'}`);
+			snackbar.show(t(confirm ? 'claim_confirmed' : 'claim_rejected'));
+			await refreshAll();
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? (Object.values(err.fields)[0] ?? err.code) : 'generic'));
+		}
+	}
+
+	async function sendNow(recipient: 'contact' | 'self') {
+		try {
+			await api('POST', `/agreements/${loan.id}/reminders/send-now`, { recipient });
+			snackbar.show(t('reminder_queued'));
+			await refreshAll();
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		}
+	}
+
+	function when(iso: string) {
+		return new Date(iso).toLocaleString(i18n.locale === 'bn' ? 'bn-BD' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+	}
 
 	// Record payment dialog
 	let payOpen = $state(false);
@@ -132,7 +161,7 @@
 			<span class="md-list__main">
 				<span class="md-body-large">{day(it.due_on)}</span>
 				<span class="md-body-small md-muted">
-					{loan.installments.length > 1 ? t('installment_n', { n: String(it.seq), count: String(loan.installments.length) }) : t('one_payment')}
+					{loan.installments.length > 1 ? t('installment_n', { n: num(it.seq), count: num(loan.installments.length) }) : t('one_payment')}
 					{#if it.status === 'partial' || (it.paid > 0 && it.remaining > 0)} · {t('remaining', { amount: money(it.remaining, loan.currency) })}{/if}
 				</span>
 			</span>
@@ -144,18 +173,38 @@
 	{/each}
 </ul>
 
+{#if claims.length > 0}
+	<h2 class="md-section-title">{t('pending_claims')}</h2>
+	<ul class="md-list claims">
+		{#each claims as p (p.id)}
+			<li class="md-list__item">
+				<span class="md-list__main">
+					<span class="md-body-large">{t('claim_says', { name: loan.contact_name, amount: money(p.amount, loan.currency) })}</span>
+					<span class="md-body-small md-muted">{day(p.paid_on)} · {t(`method_${p.method}` as Key)}{p.note ? ` · ${p.note}` : ''}</span>
+				</span>
+				<span class="claim_actions">
+					<button type="button" class="md-button md-button--text md-state" onclick={() => resolveClaim(p, false)}>{t('reject_claim')}</button>
+					<button type="button" class="md-button md-button--tonal md-state" onclick={() => resolveClaim(p, true)}>{t('confirm_claim')}</button>
+				</span>
+			</li>
+		{/each}
+	</ul>
+{/if}
+
 <h2 class="md-section-title">{t('payments')}</h2>
-{#if loan.payments.length === 0}
+{#if payments.length === 0}
 	<p class="md-body-medium md-muted">{t('no_payments')}</p>
 {:else}
 	<ul class="md-list">
-		{#each loan.payments as p (p.id)}
+		{#each payments as p (p.id)}
 			<li class="md-list__item">
 				<span class="md-list__main">
 					<span class="md-body-large">{money(p.amount, loan.currency)}</span>
 					<span class="md-body-small md-muted">{day(p.paid_on)} · {t(`method_${p.method}` as Key)}{p.note ? ` · ${p.note}` : ''}</span>
 				</span>
-				{#if editable}
+				{#if p.status === 'rejected'}
+					<span class="md-chip md-chip--neutral">{t('status_rejected')}</span>
+				{:else if editable}
 					<button type="button" class="md-icon-button md-state" aria-label={t('delete')} title={t('delete')}
 						onclick={() => { deleting = p; confirmError = ''; deleteOpen = true; }}>
 						<Icon name="delete" />
@@ -164,6 +213,64 @@
 			</li>
 		{/each}
 	</ul>
+{/if}
+
+{#if active}
+	<h2 class="md-section-title">{t('reminders')}</h2>
+	<div class="reminders">
+		{#if !data.emailEnabled}
+			<p class="md-note"><Icon name="notifications_off" size={20} />{t('email_off')}</p>
+		{:else if rem.direction === 'borrowed'}
+			<p class="md-note"><Icon name="notifications" size={20} />{t('borrowed_reminders')}</p>
+		{:else if rem.contact_opted_out}
+			<p class="md-note"><Icon name="notifications_off" size={20} />{t('contact_opted_out', { name: loan.contact_name })}</p>
+		{:else if !rem.contact_email}
+			<p class="md-note"><Icon name="mail" size={20} /><span>{t('contact_no_email', { name: loan.contact_name })} <a href="/contacts/{loan.contact_id}/edit">{t('edit')}</a></span></p>
+		{/if}
+		<p class="md-body-small md-muted">{t('reminders_hint')}</p>
+
+		{#key rem.rules}
+			<RuleEditor
+				rules={rem.rules}
+				contactName={loan.contact_name}
+				defaultHour={data.sendHour}
+				onsave={async (rules) => {
+					await api('PUT', `/agreements/${loan.id}/reminders`, { rules });
+					snackbar.show(t('reminders_saved'));
+					await refreshAll();
+				}}
+			/>
+		{/key}
+
+		{#if rem.upcoming.length > 0}
+			<p class="md-label-large">{t('next_reminders')}</p>
+			<ul class="sends md-body-medium">
+				{#each rem.upcoming as s (s.id)}
+					<li><Icon name="schedule" size={18} />{when(s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}{s.tone === 'firm' ? ` · ${t('tone_firm')}` : ''}</li>
+				{/each}
+			</ul>
+		{/if}
+
+		<div class="send_now">
+			{#if contactReachable}
+				<button type="button" class="md-button md-button--tonal md-state" onclick={() => sendNow('contact')}><Icon name="send" size={18} />{t('send_now_contact', { name: loan.contact_name })}</button>
+			{/if}
+			<button type="button" class="md-button md-button--outlined md-state" onclick={() => sendNow('self')}><Icon name="send" size={18} />{t('send_now_me')}</button>
+		</div>
+
+		{#if rem.recent.length > 0}
+			<p class="md-label-large">{t('recent_reminders')}</p>
+			<ul class="sends md-body-medium">
+				{#each rem.recent as s (s.id)}
+					<li>
+						<span class="md-chip md-chip--{s.status === 'sent' ? 'success' : s.status === 'failed' ? 'error' : 'neutral'}">{t(`send_status_${s.status}` as Key)}</span>
+						{when(s.sent_at ?? s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}
+						{#if s.skip_reason}<span class="md-muted"> · {t(`skip_${s.skip_reason}` as Key)}</span>{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
 {/if}
 
 <details class="history">
@@ -241,6 +348,44 @@
 
 	.installment {
 		min-height: 64px;
+	}
+
+	.claims {
+		background: var(--md-sys-color-primary-container);
+		border-radius: var(--md-sys-shape-lg);
+	}
+
+	.claim_actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 4px;
+	}
+
+	.reminders {
+		display: grid;
+		gap: 12px;
+	}
+
+	.sends {
+		display: grid;
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.sends li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.send_now {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.compact {

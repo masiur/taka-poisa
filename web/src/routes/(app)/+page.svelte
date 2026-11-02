@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Fab from '#lib/Fab.svelte';
 	import StatusChip from '#lib/StatusChip.svelte';
-	import { day, initial, money } from '#lib/format.svelte.js';
+	import { day, initial, money, num } from '#lib/format.svelte.js';
 	import { t } from '#lib/i18n.svelte.js';
 
 	let { data } = $props();
@@ -42,7 +42,7 @@
 						<span class="md-body-large">{item.contact_name}</span>
 						<span class="md-body-medium md-muted">
 							{item.direction === 'lent' ? t('i_lent') : t('i_borrowed')} ·
-							{item.count > 1 ? t('installment_n', { n: String(item.seq), count: String(item.count) }) : t('one_payment')}
+							{item.count > 1 ? t('installment_n', { n: num(item.seq), count: num(item.count) }) : t('one_payment')}
 						</span>
 					</span>
 					<span class="md-list__trailing">

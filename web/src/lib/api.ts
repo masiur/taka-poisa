@@ -140,3 +140,47 @@ export type Overview = {
 export type ScheduleInput =
 	| { mode: 'generate'; count: number; first_due: string; frequency?: 'monthly' | 'weekly' | 'every_n_days'; every_days?: number }
 	| { mode: 'custom'; items: { due_on: string; amount: number }[] };
+
+export type Recipient = 'contact' | 'self';
+
+export type ReminderRule = {
+	id?: number;
+	offset_days: number;
+	repeat_every_days: number | null;
+	repeat_count: number | null;
+	send_hour: number | null;
+	recipient: Recipient;
+	tone: 'polite' | 'firm';
+	paused: boolean;
+};
+
+export type ReminderSend = {
+	id: number;
+	rule_id: number | null;
+	recipient: Recipient;
+	tone: 'polite' | 'firm';
+	status: 'planned' | 'sending' | 'sent' | 'skipped' | 'failed';
+	skip_reason: string;
+	scheduled_for: string;
+	sent_at: string | null;
+};
+
+export type ReminderView = {
+	rules: ReminderRule[];
+	upcoming: ReminderSend[];
+	recent: ReminderSend[];
+	contact_email: string;
+	contact_opted_out: boolean;
+	direction: Direction;
+};
+
+export type Statement = {
+	account_name: string;
+	owner_name: string;
+	contact_name: string;
+	locale: 'bn' | 'en';
+	currency: string;
+	opted_out: boolean;
+	has_email: boolean;
+	loans: (LoanSummary & { installments: Installment[]; payments: Payment[] })[];
+};

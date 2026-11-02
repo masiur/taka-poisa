@@ -20,6 +20,20 @@
 	let confirmDelete = $state(false);
 	let deleteError = $state('');
 
+	async function shareLink() {
+		try {
+			const { url } = await api<{ url: string }>('POST', `/contacts/${c.id}/statement-link`);
+			if (navigator.share) {
+				await navigator.share({ title: c.name, url }).catch(() => {});
+			} else {
+				await navigator.clipboard.writeText(url);
+				snackbar.show(t('link_copied'));
+			}
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		}
+	}
+
 	async function remove() {
 		deleteError = '';
 		try {
@@ -50,6 +64,7 @@
 		{#if c.phone}<a href="tel:{c.phone}" class="profile__line"><Icon name="call" size={18} />{c.phone}</a>{/if}
 		{#if c.email}<a href="mailto:{c.email}" class="profile__line"><Icon name="mail" size={18} />{c.email}</a>{/if}
 		{#if c.notes}<p class="md-muted notes">{c.notes}</p>{/if}
+		<button type="button" class="md-button md-button--outlined md-state share" onclick={shareLink}><Icon name="link" size={18} />{t('share_statement')}</button>
 	</div>
 </section>
 
@@ -117,6 +132,11 @@
 
 	.notes {
 		white-space: pre-line;
+	}
+
+	.share {
+		justify-self: start;
+		margin-top: 8px;
 	}
 
 	.balances {

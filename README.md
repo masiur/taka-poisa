@@ -5,7 +5,7 @@ split it into installments, and Taka Poisa emails the other person until it is p
 
 Open source and self-hostable (one binary + PostgreSQL). See [the plan](docs/plan/taka-poisa.md).
 
-> Status: Phase 0. Owner setup, password and Google login, and ledger settings work; the ledger itself is next.
+> Status: ledger, installments, payments and email reminders work. Loan requests are next.
 
 ## Self-host with Docker
 
@@ -28,8 +28,28 @@ Backups: `docker compose exec db pg_dump -U takapoisa takapoisa > backup.sql`.
 | `BASE_URL` | `http://localhost:8080` | Public URL of the app |
 | `LISTEN_ADDR` | `:8080` | Address the server listens on |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | (empty) | Optional Google sign-in, see below |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_TLS` | (empty) | Email for reminders, see below |
 
 Migrations run automatically on start.
+
+### Email (for reminders)
+
+Reminders are sent over SMTP, so any provider works: Mailjet, Brevo, Gmail, Amazon SES, or your own server.
+Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_FROM` (see `.env.example`).
+`SMTP_FROM` must be on a domain you verified with the provider (SPF and DKIM), or emails land in spam.
+Replies go to you: each reminder's Reply-To is the ledger owner.
+
+Without `SMTP_HOST` the app still plans reminders and shows them, but marks them "email not set up".
+
+To try it locally, run [Mailpit](https://mailpit.axllent.org/) and point SMTP at it:
+
+```bash
+docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+```bash
+SMTP_HOST=localhost SMTP_PORT=1025 SMTP_TLS=none SMTP_FROM=reminders@example.test
+```
 
 ### Google sign-in (optional)
 

@@ -28,6 +28,14 @@ services:
       # Optional Google sign-in; leave empty to disable.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Email for reminders (any SMTP provider). Without SMTP_HOST, reminders are planned but not sent.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Taka Poisa}
+      SMTP_TLS: ${SMTP_TLS:-}
     ports:
       - "${PORT:-8080}:8080"
 

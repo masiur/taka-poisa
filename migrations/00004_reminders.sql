@@ -59,6 +59,14 @@ CREATE TABLE links (
 );
 CREATE INDEX links_contact_idx ON links (contact_id);
 
+-- Loans recorded before reminders existed get the built-in default rules (ledger.DefaultRules);
+-- the app replans active loans on start.
+INSERT INTO reminder_rules (account_id, agreement_id, offset_days, recipient, tone, position)
+SELECT a.account_id, a.id, r.offset_days, r.recipient, r.tone, r.position
+FROM agreements a
+CROSS JOIN (VALUES (0, 'contact', 'polite', 0), (3, 'contact', 'polite', 1),
+                   (7, 'contact', 'firm', 2), (-1, 'self', 'polite', 3)) AS r (offset_days, recipient, tone, position);
+
 -- +goose Down
 DROP TABLE links;
 DROP TABLE reminder_sends;

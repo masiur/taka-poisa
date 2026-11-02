@@ -6,3 +6,4 @@ import { formatMoney } from './money.js';
 export const money = (minor: number, currency: string) => formatMoney(minor, currency, i18n.locale);
 export const day = (iso: string) => formatDate(iso, i18n.locale);
 export const initial = (name: string) => [...name.trim()][0]?.toUpperCase() ?? '?';
+export const num = (n: number) => n.toLocaleString(i18n.locale === 'bn' ? 'bn-BD' : 'en');

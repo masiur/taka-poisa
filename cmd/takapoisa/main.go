@@ -122,7 +122,14 @@ func run(log *slog.Logger) error {
 	}
 	ledgerStore := ledger.NewStore(pool)
 	worker := &reminders.Worker{DB: pool, Ledger: ledgerStore, Mailer: mailer, BaseURL: cfg.BaseURL.String(), Log: log}
-	go worker.Run(ctx)
+	go func() {
+		if n, err := ledgerStore.ReplanAll(ctx); err != nil {
+			log.Error("replan at startup failed", "err", err)
+		} else {
+			log.Info("reminders replanned", "loans", n)
+		}
+		worker.Run(ctx)
+	}()
 
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,

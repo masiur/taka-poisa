@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-02
 **Author:** Masiur (mrsiddiki@gmail.com) + Claude Opus 5.5
-**Status:** Proposal (not started). Replaces the earlier Fluent Boards add-on plan.
+**Status:** Phases 0–2 built (auth, ledger, reminders); Phase 3 (loan requests) next. Replaces the earlier Fluent Boards add-on plan.
 
 ## Summary
 
@@ -22,7 +22,7 @@ One codebase, two ways to run it:
 |---|---|---|
 | Language | **Go** | Single static binary, ~30 MB RAM, easiest possible self-host, fast enough by a wide margin |
 | Database | **PostgreSQL** only | Date maths, row locks for jobs, Row-Level Security for hosted tenants. Supporting MySQL too would double testing for no user benefit |
-| Jobs | **River** (Postgres-backed queue) | No Redis; `FOR UPDATE SKIP LOCKED` prevents double sends |
+| Jobs | **`reminder_sends` table as the queue** (built) | No Redis or job library: a 30-second loop claims due rows with `FOR UPDATE SKIP LOCKED`; at-most-once delivery |
 | Frontend | **SvelteKit SPA**, built and embedded into the Go binary | Self-hosters still get one file; installable PWA later |
 | Migrations | `goose` SQL migrations, run on start | Simple, reversible, plain SQL |
 | Email | **Plain SMTP** behind a `Mailer` interface | Self-hosters use Mailjet / Brevo / Gmail / SES; hosted starts on a free tier, moves to SES |
@@ -187,11 +187,12 @@ Plan the sends as rows instead of computing them on every tick:
    Two rules landing on the same day for the same recipient and channel collapse into one email
    (the firmer tone wins), so overlapping rules never double-message anyone.
    Past times are not planned (no flood of catch-up emails after downtime beyond the most recent one).
-2. **Send**: a River periodic job (every minute) picks `planned` rows with `scheduled_for <= now()`
-   using `FOR UPDATE SKIP LOCKED`, marks them, and enqueues a send job per row.
+2. **Send**: a worker loop (every 30 s) claims `planned` rows with `scheduled_for <= now()` using
+   `FOR UPDATE SKIP LOCKED` and marks them `sending`. A row stuck in `sending` (crash) is marked failed,
+   never resent: reminders are delivered at most once. Rows more than 24 h late are skipped as `missed`.
 3. **Check before sending**: agreement still active, installment still unpaid, schedule not paused,
    recipient has an address and hasn't opted out. Otherwise `skipped` with a reason.
-4. **Send + record**: send via `Mailer`, store `provider_message_id`, write activity. On failure, River retries
+4. **Send + record**: send via `Mailer`, store `provider_message_id`, write activity. On failure it is requeued
    with backoff (3 attempts), then `failed`, shown on the agreement.
 
 The unique key on `reminder_sends` and the row lock make double-sending impossible, even with several app instances.
@@ -249,9 +250,9 @@ This is financial data about people who never signed up, so:
 ## Repository layout
 
 ```
-cmd/takapoisa/        main: config, migrate, HTTP server, River workers
+cmd/takapoisa/        main: config, migrate, HTTP server, reminder worker
 internal/ledger/      agreements, installments, payments, balance maths
-internal/reminders/   planner, sender, presets
+internal/reminders/   email templates and the sender worker (planner lives in internal/ledger)
 internal/requests/    loan request flow
 internal/mail/        Mailer interface, SMTP, templates (bn, en)
 internal/auth/        users, sessions, accounts
