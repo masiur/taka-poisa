@@ -7,14 +7,15 @@
 
 	let { children } = $props();
 
-	const destinations: { href: string; icon: IconName; activeIcon: IconName; label: Key }[] = [
-		{ href: '/', icon: 'home', activeIcon: 'home-fill', label: 'home' },
-		{ href: '/settings', icon: 'settings', activeIcon: 'settings-fill', label: 'settings' }
+	const destinations: { href: string; icon: IconName; activeIcon: IconName; label: Key; match: (p: string) => boolean }[] = [
+		{ href: '/', icon: 'home', activeIcon: 'home-fill', label: 'home', match: (p) => p === '/' || p.startsWith('/loans') },
+		{ href: '/contacts', icon: 'group', activeIcon: 'group-fill', label: 'contacts', match: (p) => p.startsWith('/contacts') },
+		{ href: '/settings', icon: 'settings', activeIcon: 'settings-fill', label: 'settings', match: (p) => p.startsWith('/settings') }
 	];
 
 	async function logout() {
 		await api('POST', '/logout').catch(() => {});
-		await goto('/login', { invalidateAll: true });
+		await goto('/login', { refreshAll: true });
 	}
 </script>
 
@@ -22,7 +23,7 @@
 	<!-- M3 navigation: bottom navigation bar on phones, navigation rail from 600px. -->
 	<nav class="nav" aria-label={t('app_name')}>
 		{#each destinations as d (d.href)}
-			{@const active = page.url.pathname === d.href}
+			{@const active = d.match(page.url.pathname)}
 			<a href={d.href} class="nav__item" aria-current={active ? 'page' : undefined}>
 				<span class="nav__indicator md-state"><Icon name={active ? d.activeIcon : d.icon} /></span>
 				<span class="nav__label md-label-medium">{t(d.label)}</span>

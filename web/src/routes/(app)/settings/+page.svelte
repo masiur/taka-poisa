@@ -4,7 +4,8 @@
 	import Alert from '#lib/Alert.svelte';
 	import SelectField from '#lib/SelectField.svelte';
 	import TextField from '#lib/TextField.svelte';
-	import { errorText, t } from '#lib/i18n.svelte.js';
+	import Icon from '#lib/Icon.svelte';
+	import { errorText, t, type Key } from '#lib/i18n.svelte.js';
 	import { snackbar } from '#lib/snackbar.svelte.js';
 
 	let { data } = $props();
@@ -84,9 +85,32 @@
 	</fieldset>
 </form>
 
+<section class="export">
+	<h2 class="md-section-title">{t('export')}</h2>
+	<p class="md-body-medium md-muted">{t('export_hint')}</p>
+	<div class="export__links">
+		{#each ['contacts', 'agreements', 'installments', 'payments'] as kind (kind)}
+			<a class="md-button md-button--outlined md-state" href="/api/export/{kind}" download>
+				<Icon name="download" size={18} />{t(`export_${kind}` as Key)}
+			</a>
+		{/each}
+	</div>
+</section>
+
 <style>
 	.settings {
 		max-width: 480px;
 		margin-top: 24px;
+	}
+
+	.export {
+		margin-top: 16px;
+	}
+
+	.export__links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 12px;
 	}
 </style>

@@ -1,4 +1,4 @@
-<script lang="ts" generics="T extends string | number">
+<script lang="ts" generics="T">
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { errorText } from './i18n.svelte.js';

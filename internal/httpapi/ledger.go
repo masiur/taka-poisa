@@ -53,15 +53,17 @@ func (s *server) ledgerError(w http.ResponseWriter, r *http.Request, err error) 
 }
 
 func (s *server) overview(w http.ResponseWriter, r *http.Request, p auth.Principal) {
-	o, err := s.ledger.Overview(r.Context(), p.AccountID, ledger.Today(p.Timezone))
+	today := ledger.Today(p.Timezone)
+	o, err := s.ledger.Overview(r.Context(), p.AccountID, today)
 	if err != nil {
 		s.ledgerError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
 		ledger.Overview
-		Currency string `json:"currency"`
-	}{o, p.Currency})
+		Currency string      `json:"currency"`
+		Today    ledger.Date `json:"today"` // the account's today, for due/overdue labels
+	}{o, p.Currency, today})
 }
 
 func (s *server) listContacts(w http.ResponseWriter, r *http.Request, p auth.Principal) {

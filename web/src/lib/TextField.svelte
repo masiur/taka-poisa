@@ -10,22 +10,35 @@
 		type = 'text',
 		hint = '',
 		error = '',
+		multiline = false,
 		...rest
 	}: {
 		id: string;
 		label: string;
 		value?: string;
-		type?: 'text' | 'email' | 'password';
+		type?: 'text' | 'email' | 'password' | 'tel' | 'date';
 		hint?: string;
 		error?: string;
+		multiline?: boolean;
 	} & Omit<HTMLInputAttributes, 'id' | 'value' | 'type'> = $props();
 
 	let reveal = $state(false);
 	const supportId = $derived(error || hint ? `${id}-support` : undefined);
 </script>
 
-<div class="md-field" class:md-field--error={!!error} class:md-field--populated={value !== ''}>
+<div class="md-field" class:md-field--error={!!error} class:md-field--populated={value !== '' || type === 'date'} class:md-field--multiline={multiline}>
 	<div class="md-field__box">
+		{#if multiline}
+			<textarea
+				{id}
+				class="md-field__input"
+				bind:value
+				aria-invalid={!!error}
+				aria-describedby={supportId}
+				maxlength={rest.maxlength}
+				rows={4}
+			></textarea>
+		{:else}
 		<input
 			{id}
 			class="md-field__input"
@@ -35,6 +48,7 @@
 			aria-describedby={supportId}
 			{...rest}
 		/>
+		{/if}
 		<label class="md-field__label" for={id}>{label}</label>
 		{#if type === 'password'}
 			<span class="md-field__trailing">

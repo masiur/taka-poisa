@@ -25,7 +25,7 @@
 		submitError = '';
 		try {
 			await api('POST', '/login', { email, password });
-			await goto('/', { invalidateAll: true });
+			await goto('/', { refreshAll: true });
 		} catch (err) {
 			submitError = errorText(err instanceof ApiError ? err.code : 'generic');
 		} finally {

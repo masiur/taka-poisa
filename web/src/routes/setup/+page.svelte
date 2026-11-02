@@ -34,7 +34,7 @@
 		submitError = '';
 		try {
 			await api('POST', '/setup', { name, email, password, account_name: accountName, locale: i18n.locale });
-			await goto('/', { invalidateAll: true });
+			await goto('/', { refreshAll: true });
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'validation') fields = err.fields;
 			else submitError = errorText(err instanceof ApiError ? err.code : 'generic');

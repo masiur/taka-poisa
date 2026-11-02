@@ -375,6 +375,7 @@ select.md-field__input option {
 /* Segmented buttons */
 .md-segmented {
 	display: inline-flex;
+	justify-self: start;
 	border-radius: var(--md-sys-shape-full);
 	box-shadow: inset 0 0 0 1px var(--md-sys-color-outline);
 }
@@ -500,4 +501,193 @@ select.md-field__input option {
 		transition-duration: 0ms !important;
 		animation-duration: 0ms !important;
 	}
+}
+
+/* Dialog (native <dialog>) */
+.md-dialog {
+	--md-field-label-bg: var(--md-sys-color-surface-container-high);
+	width: min(560px, calc(100vw - 32px));
+	max-height: calc(100dvh - 48px);
+	padding: 24px;
+	border: 0;
+	border-radius: var(--md-sys-shape-xl);
+	background: var(--md-sys-color-surface-container-high);
+	color: var(--md-sys-color-on-surface);
+	box-shadow: var(--md-sys-elevation-3);
+}
+
+.md-dialog::backdrop {
+	background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+}
+
+.md-dialog__body {
+	display: grid;
+	gap: 16px;
+	margin: 16px 0 24px;
+	color: var(--md-sys-color-on-surface-variant);
+}
+
+.md-dialog__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+/* Assist/status chips */
+.md-chip {
+	display: inline-flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 10px;
+	border-radius: var(--md-sys-shape-sm);
+	font: 500 0.75rem/1rem var(--md-sys-typeface);
+	letter-spacing: 0.042em;
+	white-space: nowrap;
+}
+
+.md-chip--error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.md-chip--success { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
+.md-chip--info { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.md-chip--warning { background: #ffefc9; color: #3d2e00; }
+.md-chip--neutral { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); }
+
+@media (prefers-color-scheme: dark) {
+	.md-chip--warning { background: #5a4300; color: #ffdf9e; }
+}
+
+/* Extended FAB (Gmail "Compose") */
+.md-fab {
+	position: fixed;
+	right: 16px;
+	bottom: calc(16px + var(--nav-bar-height, 0px) + env(safe-area-inset-bottom));
+	z-index: 8;
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+	height: 56px;
+	padding: 0 20px 0 16px;
+	border-radius: var(--md-sys-shape-lg);
+	background: var(--md-sys-color-secondary-container);
+	color: var(--md-sys-color-on-secondary-container);
+	font: 500 0.875rem/1.25rem var(--md-sys-typeface);
+	text-decoration: none;
+	box-shadow: var(--md-sys-elevation-3);
+}
+
+@media (min-width: 600px) {
+	.md-fab {
+		right: 32px;
+		bottom: 32px;
+	}
+}
+
+/* Lists */
+.md-list {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.md-list__item {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	min-height: 72px;
+	padding: 8px 16px;
+	color: inherit;
+	text-decoration: none;
+	border-radius: var(--md-sys-shape-md);
+}
+
+/* Hairline between rows (Gmail style); straight, not following the row's rounded hover shape. */
+.md-list > li + li {
+	border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.md-list__main {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+}
+
+.md-list__main > * {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.md-list__trailing {
+	display: grid;
+	justify-items: end;
+	gap: 4px;
+	text-align: right;
+}
+
+.md-avatar {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border-radius: var(--md-sys-shape-full);
+	background: var(--md-sys-color-primary-container);
+	color: var(--md-sys-color-on-primary-container);
+	font: 500 1rem/1 var(--md-sys-typeface);
+}
+
+/* Money tones: what I'll get vs what I owe */
+.md-money-in { color: var(--md-sys-color-tertiary); }
+.md-money-out { color: var(--md-sys-color-error); }
+
+/* Linear progress (determinate) */
+.md-progress {
+	height: 4px;
+	border-radius: var(--md-sys-shape-full);
+	background: var(--md-sys-color-secondary-container);
+	overflow: hidden;
+}
+
+.md-progress > span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--md-sys-color-primary);
+}
+
+/* Page header with back button and actions */
+.md-page-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: -8px 0 16px -12px;
+}
+
+.md-page-header h1 {
+	flex: 1;
+	min-width: 0;
+}
+
+.md-section-title {
+	margin: 32px 0 8px;
+	color: var(--md-sys-color-on-surface-variant);
+	font: 500 0.875rem/1.25rem var(--md-sys-typeface);
+	letter-spacing: 0.007em;
+}
+
+textarea.md-field__input {
+	height: auto;
+	min-height: 112px;
+	padding: 16px;
+	resize: vertical;
+}
+
+.md-field--multiline .md-field__label {
+	top: 28px;
+}
+
+.md-field--multiline.md-field--populated .md-field__label,
+.md-field--multiline .md-field__box:focus-within .md-field__label {
+	top: 0;
 }
