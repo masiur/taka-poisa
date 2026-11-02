@@ -9,16 +9,23 @@ import (
 	"net/http"
 	"net/url"
 
-	"golang.org/x/oauth2"
-
 	"github.com/masiur/taka-poisa/internal/auth"
 	"github.com/masiur/taka-poisa/internal/validate"
 )
 
-const (
-	oauthCookie     = "tp_oauth"
-	oauthCookiePath = "/api/auth/google"
-)
+const oauthCookie = "tp_oauth"
+
+// provider returns the plugged-in identity provider when the URL names it.
+func (s *server) provider(r *http.Request) (auth.IdentityProvider, bool) {
+	if s.identity == nil || r.PathValue("provider") != s.identity.Name() {
+		return nil, false
+	}
+	return s.identity, true
+}
+
+func (s *server) callbackURL(p auth.IdentityProvider) string {
+	return s.baseURL + "/api/auth/" + p.Name() + "/callback"
+}
 
 // oauthState lives in a short-lived HttpOnly cookie between start and callback.
 // State guards against login CSRF, the nonce binds the ID token to this browser,
@@ -32,15 +39,16 @@ type oauthState struct {
 	Locale      string `json:"l,omitempty"`
 }
 
-// googleStart sends the browser to Google. With mode=setup (first run only) it carries
+// identityStart sends the browser to the provider. With mode=setup (first run only) it carries
 // the ledger name and language chosen on the setup page.
-func (s *server) googleStart(w http.ResponseWriter, r *http.Request) {
-	if s.google == nil {
+func (s *server) identityStart(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.provider(r)
+	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 		return
 	}
 	q := r.URL.Query()
-	st := oauthState{State: randomToken(), Nonce: randomToken(), Verifier: oauth2.GenerateVerifier()}
+	st := oauthState{State: randomToken(), Nonce: randomToken(), Verifier: randomToken()}
 	if q.Get("mode") == "setup" {
 		in := auth.OwnerInput{AccountName: q.Get("account_name"), Locale: q.Get("locale")}
 		in.Normalize()
@@ -58,24 +66,25 @@ func (s *server) googleStart(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthCookie,
 		Value:    base64.RawURLEncoding.EncodeToString(raw),
-		Path:     oauthCookiePath,
+		Path:     "/api/auth/" + p.Name(),
 		MaxAge:   600,
 		HttpOnly: true,
 		Secure:   s.secureCookies,
-		// Lax is sent on the top-level GET redirect back from Google.
+		// Lax is sent on the top-level GET redirect back from the provider.
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, s.google.AuthCodeURL(st.State, st.Nonce, st.Verifier), http.StatusFound)
+	http.Redirect(w, r, p.AuthCodeURL(st.State, st.Nonce, st.Verifier, s.callbackURL(p)), http.StatusFound)
 }
 
-func (s *server) googleCallback(w http.ResponseWriter, r *http.Request) {
-	if s.google == nil {
+func (s *server) identityCallback(w http.ResponseWriter, r *http.Request) {
+	p, found := s.provider(r)
+	if !found {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 		return
 	}
 	st, ok := readOAuthState(r)
 	http.SetCookie(w, &http.Cookie{
-		Name: oauthCookie, Path: oauthCookiePath, MaxAge: -1,
+		Name: oauthCookie, Path: "/api/auth/" + p.Name(), MaxAge: -1,
 		HttpOnly: true, Secure: s.secureCookies, SameSite: http.SameSiteLaxMode,
 	})
 
@@ -89,18 +98,18 @@ func (s *server) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	if !ok || subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(st.State)) != 1 {
-		fail("google_failed")
+		fail("sso_failed")
 		return
 	}
 	if q.Get("error") != "" {
-		fail("google_cancelled")
+		fail("sso_cancelled")
 		return
 	}
 
-	claims, err := s.google.Exchange(r.Context(), q.Get("code"), st.Verifier, st.Nonce)
+	identity, err := p.Exchange(r.Context(), q.Get("code"), st.Verifier, st.Nonce, s.callbackURL(p))
 	if err != nil {
-		s.log.Warn("google sign-in failed", "err", err)
-		fail("google_failed")
+		s.log.Warn("outside sign-in failed", "provider", p.Name(), "err", err)
+		fail("sso_failed")
 		return
 	}
 
@@ -108,10 +117,10 @@ func (s *server) googleCallback(w http.ResponseWriter, r *http.Request) {
 	if st.Setup {
 		setup = &auth.OwnerInput{AccountName: st.AccountName, Locale: st.Locale}
 	}
-	userID, err := s.auth.GoogleSignIn(r.Context(), claims, setup)
+	userID, err := s.auth.ExternalSignIn(r.Context(), p.Name(), identity, setup)
 	switch {
 	case errors.Is(err, auth.ErrEmailUnverified):
-		fail("google_unverified")
+		fail("sso_unverified")
 		return
 	case errors.Is(err, auth.ErrNoAccount):
 		fail("no_account")
@@ -120,14 +129,14 @@ func (s *server) googleCallback(w http.ResponseWriter, r *http.Request) {
 		fail("already_set_up")
 		return
 	case err != nil:
-		s.log.Error("google sign-in failed", "err", err)
-		fail("google_failed")
+		s.log.Error("outside sign-in failed", "provider", p.Name(), "err", err)
+		fail("sso_failed")
 		return
 	}
 
 	if err := s.setSessionCookie(w, r, userID); err != nil {
-		s.log.Error("google sign-in: create session", "err", err)
-		fail("google_failed")
+		s.log.Error("outside sign-in: create session", "err", err)
+		fail("sso_failed")
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)

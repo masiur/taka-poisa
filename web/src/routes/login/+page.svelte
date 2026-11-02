@@ -6,7 +6,7 @@
 	import AuthLayout from '#lib/AuthLayout.svelte';
 	import GoogleButton from '#lib/GoogleButton.svelte';
 	import TextField from '#lib/TextField.svelte';
-	import { errorText, t } from '#lib/i18n.svelte.js';
+	import { errorText, providerName, t } from '#lib/i18n.svelte.js';
 
 	let { data } = $props();
 
@@ -39,8 +39,8 @@
 <AuthLayout title={t('login_title')}>
 	<div class="md-form">
 		{#if formError}<Alert message={formError} />{/if}
-		{#if data.google}
-			<GoogleButton label={t('continue_with_google')} onclick={() => (location.href = '/api/auth/google/start?mode=login')} />
+		{#if data.sso}
+			<GoogleButton provider={data.sso} label={t('continue_with', { provider: providerName(data.sso) })} onclick={() => (location.href = `/api/auth/${data.sso}/start?mode=login`)} />
 			<p class="md-divider-label">{t('or')}</p>
 		{/if}
 		<form class="md-form" onsubmit={submit}>

@@ -22,11 +22,11 @@ const sessionCookie = "tp_session"
 
 type Config struct {
 	DB            *pgxpool.Pool
-	SecureCookies bool         // true when BASE_URL is https
-	Static        fs.FS        // built web UI
-	Google        *auth.Google // nil when Google sign-in is not configured
-	BaseURL       string       // public URL, for links handed out (statement pages)
-	EmailEnabled  bool         // SMTP configured; shown to the owner next to reminders
+	SecureCookies bool                  // true when BASE_URL is https
+	Static        fs.FS                 // built web UI
+	Identity      auth.IdentityProvider // outside sign-in; nil on the open-source server
+	BaseURL       string                // public URL, for links handed out (statement pages)
+	EmailEnabled  bool                  // SMTP configured; shown to the owner next to reminders
 	Log           *slog.Logger
 }
 
@@ -35,7 +35,7 @@ type server struct {
 	auth          *auth.Store
 	accounts      *account.Store
 	ledger        *ledger.Store
-	google        *auth.Google
+	identity      auth.IdentityProvider
 	baseURL       string
 	emailEnabled  bool
 	secureCookies bool
@@ -50,7 +50,7 @@ func New(cfg Config) http.Handler {
 		auth:          auth.NewStore(cfg.DB),
 		accounts:      account.NewStore(cfg.DB),
 		ledger:        ledger.NewStore(cfg.DB),
-		google:        cfg.Google,
+		identity:      cfg.Identity,
 		baseURL:       cfg.BaseURL,
 		emailEnabled:  cfg.EmailEnabled,
 		secureCookies: cfg.SecureCookies,
@@ -65,8 +65,8 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/setup", s.postSetup)
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.logout)
-	mux.HandleFunc("GET /api/auth/google/start", s.googleStart)
-	mux.HandleFunc("GET /api/auth/google/callback", s.googleCallback)
+	mux.HandleFunc("GET /api/auth/{provider}/start", s.identityStart)
+	mux.HandleFunc("GET /api/auth/{provider}/callback", s.identityCallback)
 	mux.HandleFunc("GET /api/me", s.requireAuth(s.me))
 	mux.HandleFunc("GET /api/account", s.requireAuth(s.getAccount))
 	mux.HandleFunc("PUT /api/account", s.requireAuth(s.putAccount))
@@ -98,7 +98,11 @@ func (s *server) getSetup(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"needed": needed, "google": s.google != nil})
+	sso := ""
+	if s.identity != nil {
+		sso = s.identity.Name()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"needed": needed, "sso": sso})
 }
 
 func (s *server) postSetup(w http.ResponseWriter, r *http.Request) {

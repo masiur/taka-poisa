@@ -29,14 +29,14 @@ const en = {
 	owner_only: 'Only the owner can change these settings.',
 	show_password: 'Show password',
 	hide_password: 'Hide password',
-	continue_with_google: 'Continue with Google',
-	setup_with_google: 'Set up with Google',
+	continue_with: 'Continue with {provider}',
+	setup_with: 'Set up with {provider}',
 	or: 'or',
 	or_with_password: 'or set a password',
-	err_google_failed: 'Google sign-in did not work. Please try again.',
-	err_google_cancelled: 'Google sign-in was cancelled.',
-	err_google_unverified: 'Your Google email is not verified.',
-	err_no_account: 'No account uses this Google email. Ask the owner to add you, or log in with your password.',
+	err_sso_failed: 'Sign-in did not work. Please try again.',
+	err_sso_cancelled: 'Sign-in was cancelled.',
+	err_sso_unverified: 'Your email is not verified with that account.',
+	err_no_account: 'No account uses this email. Ask the owner to add you, or log in with your password.',
 	err_required: 'Required',
 	err_too_short: 'Too short',
 	err_too_long: 'Too long',
@@ -400,14 +400,14 @@ const bn: Record<Key, string> = {
 	owner_only: 'শুধু মালিক এই সেটিংস বদলাতে পারেন।',
 	show_password: 'পাসওয়ার্ড দেখান',
 	hide_password: 'পাসওয়ার্ড লুকান',
-	continue_with_google: 'Google দিয়ে চালিয়ে যান',
-	setup_with_google: 'Google দিয়ে চালু করুন',
+	continue_with: '{provider} দিয়ে চালিয়ে যান',
+	setup_with: '{provider} দিয়ে চালু করুন',
 	or: 'অথবা',
 	or_with_password: 'অথবা পাসওয়ার্ড দিন',
-	err_google_failed: 'Google দিয়ে লগ ইন হয়নি। আবার চেষ্টা করুন।',
-	err_google_cancelled: 'Google লগ ইন বাতিল করা হয়েছে।',
-	err_google_unverified: 'আপনার Google ইমেইল যাচাই করা নেই।',
-	err_no_account: 'এই Google ইমেইলের কোনো অ্যাকাউন্ট নেই। মালিককে আপনাকে যুক্ত করতে বলুন, অথবা পাসওয়ার্ড দিয়ে লগ ইন করুন।',
+	err_sso_failed: 'লগ ইন হয়নি। আবার চেষ্টা করুন।',
+	err_sso_cancelled: 'লগ ইন বাতিল করা হয়েছে।',
+	err_sso_unverified: 'ওই অ্যাকাউন্টে আপনার ইমেইল যাচাই করা নেই।',
+	err_no_account: 'এই ইমেইলের কোনো অ্যাকাউন্ট নেই। মালিককে আপনাকে যুক্ত করতে বলুন, অথবা পাসওয়ার্ড দিয়ে লগ ইন করুন।',
 	err_required: 'আবশ্যক',
 	err_too_short: 'খুব ছোট',
 	err_too_long: 'খুব বড়',
@@ -777,4 +777,9 @@ export function t(key: Key, vars: Record<string, string> = {}): string {
 export function errorText(code: string): string {
 	const key = `err_${code}` as Key;
 	return key in en ? t(key) : t('err_generic');
+}
+
+/** Display name of an outside sign-in provider id ("google" → "Google"). */
+export function providerName(id: string): string {
+	return ({ google: 'Google' } as Record<string, string>)[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 }

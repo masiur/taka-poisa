@@ -108,9 +108,9 @@ func (s *Store) CreateOwner(ctx context.Context, in OwnerInput) (int64, error) {
 	return s.createOwner(ctx, in, &hash, nil)
 }
 
-// createOwner is the single owner-creation path; a Google owner has no password hash
-// and a linked identity instead.
-func (s *Store) createOwner(ctx context.Context, in OwnerInput, hash *string, google *GoogleClaims) (int64, error) {
+// createOwner is the single owner-creation path; an owner from an outside sign-in has no
+// password hash and a linked identity instead.
+func (s *Store) createOwner(ctx context.Context, in OwnerInput, hash *string, ext *linkedIdentity) (int64, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -144,27 +144,28 @@ func (s *Store) createOwner(ctx context.Context, in OwnerInput, hash *string, go
 		accountID, userID); err != nil {
 		return 0, err
 	}
-	if google != nil {
-		if err := linkGoogle(ctx, tx, userID, *google); err != nil {
+	if ext != nil {
+		if err := linkIdentity(ctx, tx, userID, *ext); err != nil {
 			return 0, err
 		}
 	}
 	return userID, tx.Commit(ctx)
 }
 
-// GoogleSignIn resolves a verified Google account to a user:
-//  1. a user already linked to this Google subject;
-//  2. otherwise a user whose email equals the Google-verified email (the identity is linked);
+// ExternalSignIn resolves an identity verified by an outside provider to a user:
+//  1. a user already linked to this provider subject;
+//  2. otherwise a user whose email equals the provider-verified email (the identity is linked);
 //  3. otherwise, when setup is given and no user exists yet, a new owner.
 //
-// Any other case is ErrNoAccount: sign-up through Google is not open on self-hosted servers.
-func (s *Store) GoogleSignIn(ctx context.Context, c GoogleClaims, setup *OwnerInput) (int64, error) {
+// Any other case is ErrNoAccount: an outside sign-in never opens sign-up by itself.
+func (s *Store) ExternalSignIn(ctx context.Context, provider string, c ExternalIdentity, setup *OwnerInput) (int64, error) {
 	if !c.EmailVerified {
 		return 0, ErrEmailUnverified
 	}
+	id := linkedIdentity{provider, c}
 	var userID int64
 	err := s.db.QueryRow(ctx,
-		`SELECT user_id FROM user_identities WHERE provider = 'google' AND subject = $1`, c.Subject).Scan(&userID)
+		`SELECT user_id FROM user_identities WHERE provider = $1 AND subject = $2`, provider, c.Subject).Scan(&userID)
 	if err == nil {
 		return userID, markVerified(ctx, s.db, userID, c)
 	}
@@ -175,7 +176,7 @@ func (s *Store) GoogleSignIn(ctx context.Context, c GoogleClaims, setup *OwnerIn
 	email := validate.NormalizeEmail(c.Email)
 	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
 	if err == nil {
-		return userID, linkGoogle(ctx, s.db, userID, c)
+		return userID, linkIdentity(ctx, s.db, userID, id)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
@@ -186,36 +187,41 @@ func (s *Store) GoogleSignIn(ctx context.Context, c GoogleClaims, setup *OwnerIn
 	}
 	in := *setup
 	in.Email = email
-	in.Name = googleDisplayName(c)
-	return s.createOwner(ctx, in, nil, &c)
+	in.Name = displayName(c)
+	return s.createOwner(ctx, in, nil, &id)
 }
 
 type execer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-func linkGoogle(ctx context.Context, db execer, userID int64, c GoogleClaims) error {
+type linkedIdentity struct {
+	provider string
+	ExternalIdentity
+}
+
+func linkIdentity(ctx context.Context, db execer, userID int64, id linkedIdentity) error {
 	_, err := db.Exec(ctx, `
-		INSERT INTO user_identities (provider, subject, user_id, email) VALUES ('google', $1, $2, $3)
+		INSERT INTO user_identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (provider, subject) DO NOTHING`,
-		c.Subject, userID, validate.NormalizeEmail(c.Email))
+		id.provider, id.Subject, userID, validate.NormalizeEmail(id.Email))
 	if err != nil {
 		return err
 	}
-	return markVerified(ctx, db, userID, c)
+	return markVerified(ctx, db, userID, id.ExternalIdentity)
 }
 
-// markVerified records that the user proved they own their account email (Google verified it).
+// markVerified records that the user proved they own their account email (the provider verified it).
 // Features that trust an email match, such as incoming loan requests, require this.
-func markVerified(ctx context.Context, db execer, userID int64, c GoogleClaims) error {
+func markVerified(ctx context.Context, db execer, userID int64, c ExternalIdentity) error {
 	_, err := db.Exec(ctx, `
 		UPDATE users SET email_verified_at = now()
 		WHERE id = $1 AND email = $2 AND email_verified_at IS NULL`, userID, validate.NormalizeEmail(c.Email))
 	return err
 }
 
-// googleDisplayName is the Google profile name, or the email's local part, cut to the 100-character limit.
-func googleDisplayName(c GoogleClaims) string {
+// displayName is the provider's profile name, or the email's local part, cut to the 100-character limit.
+func displayName(c ExternalIdentity) string {
 	name := strings.TrimSpace(c.Name)
 	if name == "" {
 		name, _, _ = strings.Cut(c.Email, "@")
@@ -227,7 +233,7 @@ func googleDisplayName(c GoogleClaims) string {
 }
 
 // Authenticate returns the user id for a correct email and password.
-// Users without a password (Google-only) can never pass.
+// Users without a password (outside sign-in only) can never pass.
 func (s *Store) Authenticate(ctx context.Context, email, password string) (int64, error) {
 	var id int64
 	var hash *string

@@ -6,7 +6,7 @@
 	import AuthLayout from '#lib/AuthLayout.svelte';
 	import GoogleButton from '#lib/GoogleButton.svelte';
 	import TextField from '#lib/TextField.svelte';
-	import { errorText, i18n, t } from '#lib/i18n.svelte.js';
+	import { errorText, i18n, providerName, t } from '#lib/i18n.svelte.js';
 
 	let { data } = $props();
 
@@ -45,7 +45,7 @@
 	// Google supplies name and email; the language comes from this page.
 	function setupWithGoogle() {
 		const q = new URLSearchParams({ mode: 'setup', locale: i18n.locale });
-		location.href = `/api/auth/google/start?${q}`;
+		location.href = `/api/auth/${data.sso}/start?${q}`;
 	}
 </script>
 
@@ -55,8 +55,8 @@
 	<div class="md-form" oninput={clearFieldError}>
 		{#if formError}<Alert message={formError} />{/if}
 
-		{#if data.google}
-			<GoogleButton label={t('setup_with_google')} onclick={setupWithGoogle} />
+		{#if data.sso}
+			<GoogleButton provider={data.sso} label={t('setup_with', { provider: providerName(data.sso) })} onclick={setupWithGoogle} />
 			<p class="md-divider-label">{t('or_with_password')}</p>
 		{/if}
 

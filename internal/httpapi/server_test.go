@@ -28,14 +28,14 @@ func newTestServer(t *testing.T) *httptest.Server {
 	return newTestServerWith(t, nil)
 }
 
-func newTestServerWith(t *testing.T, google *auth.Google) *httptest.Server {
+func newTestServerWith(t *testing.T, identity auth.IdentityProvider) *httptest.Server {
 	t.Helper()
-	srv, _ := newTestEnv(t, google)
+	srv, _ := newTestEnv(t, identity)
 	return srv
 }
 
 // newTestEnv also returns the pool, for tests that need to arrange data directly.
-func newTestEnv(t *testing.T, google *auth.Google) (*httptest.Server, *pgxpool.Pool) {
+func newTestEnv(t *testing.T, identity auth.IdentityProvider) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
 	base := os.Getenv("TEST_DATABASE_URL")
 	if base == "" {
@@ -70,10 +70,11 @@ func newTestEnv(t *testing.T, google *auth.Google) (*httptest.Server, *pgxpool.P
 	}
 
 	srv := httptest.NewServer(New(Config{
-		DB:     pool,
-		Static: fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}},
-		Google: google,
-		Log:    slog.New(slog.DiscardHandler),
+		DB:       pool,
+		Static:   fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}},
+		Identity: identity,
+		BaseURL:  "http://app.test",
+		Log:      slog.New(slog.DiscardHandler),
 	}))
 	t.Cleanup(srv.Close)
 	return srv, pool
