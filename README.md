@@ -26,6 +26,7 @@ Backups: `docker compose exec db pg_dump -U takapoisa takapoisa > backup.sql`.
 |---|---|---|
 | `DATABASE_URL` | (required) | PostgreSQL connection URL |
 | `BASE_URL` | `http://localhost:8080` | Public URL of the app |
+| `SIGNUP` | `closed` | `open` lets anyone create an account with their own ledger |
 | `LISTEN_ADDR` | `:8080` | Address the server listens on |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_TLS` | (empty) | Email for reminders, see below |
 | `SMS_PROVIDER` and `SMS_HTTP_*` / `TWILIO_*` | (empty) | SMS reminders through your own gateway, see below |
@@ -69,6 +70,10 @@ message segments than English (about 70 characters each), so they cost more per 
 
 Self-hosted servers use email and password. The owner account is created on first visit.
 (Google sign-in is part of the hosted app only.)
+
+With `SIGNUP=open`, the login page links to a sign-up page. Each new person gets their own private
+"Personal" ledger. When SMTP is set up they also get a link to confirm their email; until they
+confirm, other people's loan requests are not shown to them in the app.
 
 ## Develop
 

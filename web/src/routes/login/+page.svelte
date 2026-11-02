@@ -50,5 +50,15 @@
 				<button type="submit" class="md-button md-button--filled md-button--block md-state" disabled={busy}>{t('login')}</button>
 			</div>
 		</form>
+		{#if data.signup}
+			<p class="md-body-medium switch">{t('no_account_yet')} <a href="/signup">{t('create_account')}</a></p>
+		{/if}
 	</div>
 </AuthLayout>
+
+<style>
+	.switch {
+		margin: 0;
+		text-align: center;
+	}
+</style>

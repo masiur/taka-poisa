@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: postgres://takapoisa:${POSTGRES_PASSWORD:-takapoisa}@db:5432/takapoisa?sslmode=disable
       BASE_URL: ${BASE_URL:-http://localhost:8080}
+      SIGNUP: ${SIGNUP:-closed}
       # Email for reminders (any SMTP provider). Without SMTP_HOST, reminders are planned but not sent.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { refreshAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { api, ApiError, type RequestView } from '#lib/api.js';
 	import Fab from '#lib/Fab.svelte';
 	import Icon from '#lib/Icon.svelte';
@@ -11,6 +12,29 @@
 
 	let { data } = $props();
 	const o = $derived(data.overview);
+
+	const me = $derived(data.me);
+	let resending = $state(false);
+
+	// The verification email's link lands here with ?verified=1.
+	$effect(() => {
+		if (page.url.searchParams.get('verified') === '1') {
+			snackbar.show(t('email_verified'));
+			goto('/', { replaceState: true });
+		}
+	});
+
+	async function resend() {
+		resending = true;
+		try {
+			await api('POST', '/verify-email/resend');
+			snackbar.show(t('verify_sent', { email: me?.user.email ?? '' }));
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		} finally {
+			resending = false;
+		}
+	}
 
 	async function answer(r: RequestView, accept: boolean) {
 		try {
@@ -26,6 +50,14 @@
 <svelte:head><title>{t('app_name')}</title></svelte:head>
 
 <h1 class="md-headline-small">{t('welcome', { name: data.me?.user.name ?? '' })}</h1>
+
+{#if me?.email_enabled && !me.user.email_verified}
+	<div class="md-note verify">
+		<Icon name="mail" size={20} />
+		<p>{t('verify_banner', { email: me.user.email })}</p>
+		<button type="button" class="md-button md-button--text md-state" onclick={resend} disabled={resending}>{t('verify_resend')}</button>
+	</div>
+{/if}
 
 <div class="totals">
 	<section class="md-card md-card--outlined total">
@@ -114,6 +146,18 @@
 <Fab href="/loans/new" label={t('new_loan')} />
 
 <style>
+	.verify {
+		align-items: center;
+		flex-wrap: wrap;
+		margin: 16px 0 0;
+	}
+
+	.verify p {
+		flex: 1;
+		min-width: 200px;
+		margin: 0;
+	}
+
 	.totals {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

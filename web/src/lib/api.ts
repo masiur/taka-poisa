@@ -9,8 +9,9 @@ export class ApiError extends Error {
 }
 
 export type Me = {
-	user: { id: number; name: string; email: string; locale: 'bn' | 'en' };
+	user: { id: number; name: string; email: string; locale: 'bn' | 'en'; email_verified: boolean };
 	account: { id: number; role: 'owner' | 'member' };
+	email_enabled: boolean;
 };
 
 export type AccountSettings = {

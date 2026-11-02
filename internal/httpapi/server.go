@@ -15,6 +15,7 @@ import (
 	"github.com/masiur/taka-poisa/internal/account"
 	"github.com/masiur/taka-poisa/internal/auth"
 	"github.com/masiur/taka-poisa/internal/ledger"
+	"github.com/masiur/taka-poisa/internal/mail"
 	"github.com/masiur/taka-poisa/internal/validate"
 )
 
@@ -26,7 +27,8 @@ type Config struct {
 	Static        fs.FS                 // built web UI
 	Identity      auth.IdentityProvider // outside sign-in; nil on the open-source server
 	BaseURL       string                // public URL, for links handed out (statement pages)
-	EmailEnabled  bool                  // SMTP configured; shown to the owner next to reminders
+	Mailer        mail.Mailer           // nil when SMTP is not configured
+	Signup        bool                  // anyone may create an account (SIGNUP=open)
 	SMSEnabled    bool                  // an SMS gateway is configured
 	Log           *slog.Logger
 }
@@ -38,11 +40,15 @@ type server struct {
 	ledger        *ledger.Store
 	identity      auth.IdentityProvider
 	baseURL       string
+	mailer        mail.Mailer
 	emailEnabled  bool
+	signup        bool
 	smsEnabled    bool
 	secureCookies bool
 	loginLimit    *limiter
 	askLimit      *limiter
+	signupLimit   *limiter // sign-ups per client IP
+	verifyLimit   *limiter // verification emails per user
 	log           *slog.Logger
 }
 
@@ -54,11 +60,15 @@ func New(cfg Config) http.Handler {
 		ledger:        ledger.NewStore(cfg.DB),
 		identity:      cfg.Identity,
 		baseURL:       cfg.BaseURL,
-		emailEnabled:  cfg.EmailEnabled,
+		mailer:        cfg.Mailer,
+		emailEnabled:  cfg.Mailer != nil,
+		signup:        cfg.Signup,
 		smsEnabled:    cfg.SMSEnabled,
 		secureCookies: cfg.SecureCookies,
 		loginLimit:    newLimiter(10, 15*time.Minute),
 		askLimit:      newLimiter(5, askLimitWindow),
+		signupLimit:   newLimiter(20, time.Hour),
+		verifyLimit:   newLimiter(3, time.Hour),
 		log:           cfg.Log,
 	}
 
@@ -67,6 +77,9 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/setup", s.getSetup)
 	mux.HandleFunc("POST /api/setup", s.postSetup)
 	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/signup", s.postSignup)
+	mux.HandleFunc("GET /api/verify-email", s.verifyEmail)
+	mux.HandleFunc("POST /api/verify-email/resend", s.requireAuth(s.resendVerification))
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("GET /api/auth/{provider}/start", s.identityStart)
 	mux.HandleFunc("GET /api/auth/{provider}/callback", s.identityCallback)
@@ -105,7 +118,7 @@ func (s *server) getSetup(w http.ResponseWriter, r *http.Request) {
 	if s.identity != nil {
 		sso = s.identity.Name()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"needed": needed, "sso": sso})
+	writeJSON(w, http.StatusOK, map[string]any{"needed": needed, "sso": sso, "signup": s.signup})
 }
 
 func (s *server) postSetup(w http.ResponseWriter, r *http.Request) {
@@ -227,8 +240,11 @@ type meResponse struct {
 		Name   string `json:"name"`
 		Email  string `json:"email"`
 		Locale string `json:"locale"`
+		// EmailVerified matters only when verification email can be sent (EmailEnabled).
+		EmailVerified bool `json:"email_verified"`
 	} `json:"user"`
-	Account struct {
+	EmailEnabled bool `json:"email_enabled"`
+	Account      struct {
 		ID   int64  `json:"id"`
 		Role string `json:"role"`
 	} `json:"account"`
@@ -237,6 +253,7 @@ type meResponse struct {
 func (s *server) me(w http.ResponseWriter, r *http.Request, p auth.Principal) {
 	var res meResponse
 	res.User.ID, res.User.Name, res.User.Email, res.User.Locale = p.UserID, p.Name, p.Email, p.Locale
+	res.User.EmailVerified, res.EmailEnabled = p.EmailVerified, s.emailEnabled
 	res.Account.ID, res.Account.Role = p.AccountID, p.Role
 	writeJSON(w, http.StatusOK, res)
 }
