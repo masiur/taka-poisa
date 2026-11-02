@@ -79,6 +79,10 @@ export type LoanSummary = {
 	purpose: string;
 	next_due_on: string | null;
 	next_amount: number;
+	origin: 'manual' | 'request';
+	request_message: string;
+	request_expires_at: string | null;
+	decision_note: string;
 };
 
 export type Installment = {
@@ -183,4 +187,19 @@ export type Statement = {
 	opted_out: boolean;
 	has_email: boolean;
 	loans: (LoanSummary & { installments: Installment[]; payments: Payment[] })[];
+};
+
+export type RequestView = {
+	id: number;
+	status: LoanStatus;
+	borrower_name: string;
+	account_name: string;
+	currency: string;
+	principal: number;
+	purpose: string;
+	message: string;
+	expires_at: string;
+	locale: 'bn' | 'en';
+	installments: { due_on: string; amount: number }[];
+	decision_note: string;
 };

@@ -105,6 +105,16 @@
 		}
 	}
 
+	async function withdraw() {
+		try {
+			await api('POST', `/agreements/${loan.id}/withdraw`);
+			snackbar.show(t('request_withdrawn'));
+			await refreshAll();
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		}
+	}
+
 	async function cancelLoan() {
 		confirmError = '';
 		try {
@@ -133,6 +143,23 @@
 		<a href="/loans/{loan.id}/edit" class="md-icon-button md-state" aria-label={t('edit_loan')} title={t('edit_loan')}><Icon name="edit" /></a>
 	{/if}
 </header>
+
+{#if loan.origin === 'request' && loan.status !== 'active' && loan.status !== 'settled'}
+	<section class="md-note request_note">
+		<Icon name={loan.status === 'requested' ? 'schedule' : 'notifications_off'} size={20} />
+		<div>
+			{#if loan.status === 'requested'}
+				<p>{t('waiting_answer', { name: loan.contact_name, date: day((loan.request_expires_at ?? '').slice(0, 10)) })}</p>
+				{#if loan.request_message}<p class="md-muted">“{loan.request_message}”</p>{/if}
+				<button type="button" class="md-button md-button--text md-state" onclick={withdraw}>{t('withdraw')}</button>
+			{:else if loan.status === 'declined'}
+				<p>{t('request_declined_note', { name: loan.contact_name })}{loan.decision_note ? ` “${loan.decision_note}”` : ''}</p>
+			{:else if loan.status === 'expired'}
+				<p>{t('request_expired_note', { date: day((loan.request_expires_at ?? '').slice(0, 10)) })}</p>
+			{/if}
+		</div>
+	</section>
+{/if}
 
 <section class="summary">
 	<div class="summary__top">
@@ -191,6 +218,8 @@
 	</ul>
 {/if}
 
+<!-- A request that never became a loan has no payments to show. -->
+{#if !(loan.origin === 'request' && !editable)}
 <h2 class="md-section-title">{t('payments')}</h2>
 {#if payments.length === 0}
 	<p class="md-body-medium md-muted">{t('no_payments')}</p>
@@ -273,6 +302,8 @@
 	</div>
 {/if}
 
+{/if}
+
 <details class="history">
 	<summary class="md-section-title"><Icon name="history" size={18} />{t('history')}</summary>
 	<ul class="md-list">
@@ -326,6 +357,14 @@
 </Dialog>
 
 <style>
+	.request_note {
+		margin-bottom: 16px;
+	}
+
+	.request_note p {
+		margin: 0 0 4px;
+	}
+
 	.summary {
 		display: grid;
 		gap: 12px;

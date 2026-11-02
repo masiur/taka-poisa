@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-02
 **Author:** Masiur (mrsiddiki@gmail.com) + Claude Opus 5.5
-**Status:** Phases 0–2 built (auth, ledger, reminders); Phase 3 (loan requests) next. Replaces the earlier Fluent Boards add-on plan.
+**Status:** Phases 0–3 built: v1 feature-complete (auth incl. Google, ledger, multiple reminders, loan requests). Phase 4 (hosted) next. Replaces the earlier Fluent Boards add-on plan.
 
 ## Summary
 
@@ -103,6 +103,10 @@ A request is an agreement in status `requested` with one extra rule: the **lende
    installments. Reminders to the borrower (self) start from the schedule. Decline → status `declined`, borrower is notified.
 5. The lender's accept page offers "Create a free Taka Poisa account to track this", which creates
    their own `lent` copy (no sync in v1).
+
+Built note: the in-app inbox (Flow B) only shows requests to users whose email is **verified** (today: signed in
+with Google using that email), so registering someone else's email never exposes their requests. Phase 4 must
+add email verification for password sign-ups before opening sign-up on the hosted app.
 
 ### Flow B: someone with an account on the same instance asks me
 

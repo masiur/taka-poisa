@@ -13,6 +13,8 @@
 		frequency: 'monthly' | 'weekly' | 'every_n_days';
 		everyDays: string;
 		firstDue: string;
+		message: string;
+		expiresInDays: string;
 	};
 
 	/** Default values for a new loan: one payment due in a month. */
@@ -29,7 +31,9 @@
 			count: '3',
 			frequency: 'monthly',
 			everyDays: '15',
-			firstDue: addMonthsISO(today, 1)
+			firstDue: addMonthsISO(today, 1),
+			message: '',
+			expiresInDays: '14'
 		};
 	}
 </script>
@@ -51,6 +55,8 @@
 		started_on: string;
 		purpose: string;
 		schedule: ScheduleInput;
+		message?: string;
+		expires_in_days?: number;
 	};
 
 	let {
@@ -60,7 +66,7 @@
 		initial,
 		onsave
 	}: {
-		mode: 'create' | 'edit';
+		mode: 'create' | 'edit' | 'request';
 		currency: string;
 		contacts?: Contact[];
 		initial: LoanValues;
@@ -123,6 +129,7 @@
 		try {
 			const payload: Payload = { principal, started_on: v.startedOn, purpose: v.purpose, schedule };
 			if (mode === 'create') Object.assign(payload, { contact_id: v.contactId, direction: v.direction });
+			if (mode === 'request') Object.assign(payload, { contact_id: v.contactId, message: v.message, expires_in_days: Number(v.expiresInDays) });
 			await onsave(payload);
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'validation') fields = err.fields;
@@ -134,11 +141,13 @@
 </script>
 
 <form class="md-form loan_form" onsubmit={submit} novalidate>
-	{#if mode === 'create'}
-		<SelectField id="contact" label={t('contact')} bind:value={v.contactId} error={fieldError('contact_id')}>
+	{#if mode !== 'edit'}
+		<SelectField id="contact" label={t('contact')} hint={mode === 'request' ? t('lender_needs_email') : ''} bind:value={v.contactId} error={fieldError('contact_id')}>
 			<option value={null} disabled>{t('choose_contact')}</option>
-			{#each contacts as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+			{#each contacts as c (c.id)}<option value={c.id} disabled={mode === 'request' && !c.email}>{c.name}{mode === 'request' && c.email ? ` · ${c.email}` : ''}</option>{/each}
 		</SelectField>
+	{/if}
+	{#if mode === 'create'}
 
 		<div class="md-segmented" role="group" aria-label={t('direction')}>
 			{#each [['lent', t('i_lent')], ['borrowed', t('i_borrowed')]] as [value, label] (value)}
@@ -189,9 +198,16 @@
 		</section>
 	{/if}
 
+	{#if mode === 'request'}
+		<TextField id="message" label={t('request_message')} hint={t('request_message_hint')} multiline bind:value={v.message} error={fieldError('message')} maxlength={1000} />
+		<SelectField id="expires" label={t('expires_in')} bind:value={v.expiresInDays} error={fieldError('expires_in_days')}>
+			{#each ['7', '14', '30'] as n (n)}<option value={n}>{t('days_n', { n })}</option>{/each}
+		</SelectField>
+	{/if}
+
 	{#if formError}<Alert message={formError} />{/if}
 	<div class="md-form__actions">
-		<button type="submit" class="md-button md-button--filled md-state" disabled={busy}>{t('save_loan')}</button>
+		<button type="submit" class="md-button md-button--filled md-state" disabled={busy}>{mode === 'request' ? t('send_request') : t('save_loan')}</button>
 	</div>
 </form>
 

@@ -1,11 +1,26 @@
 <script lang="ts">
+	import { refreshAll } from '$app/navigation';
+	import { api, ApiError, type RequestView } from '#lib/api.js';
 	import Fab from '#lib/Fab.svelte';
+	import Icon from '#lib/Icon.svelte';
+	import LoanRow from '#lib/LoanRow.svelte';
+	import { snackbar } from '#lib/snackbar.svelte.js';
 	import StatusChip from '#lib/StatusChip.svelte';
 	import { day, initial, money, num } from '#lib/format.svelte.js';
-	import { t } from '#lib/i18n.svelte.js';
+	import { errorText, t } from '#lib/i18n.svelte.js';
 
 	let { data } = $props();
 	const o = $derived(data.overview);
+
+	async function answer(r: RequestView, accept: boolean) {
+		try {
+			await api('POST', `/requests/incoming/${r.id}/${accept ? 'accept' : 'decline'}`, { note: '' });
+			snackbar.show(t(accept ? 'request_accepted' : 'request_declined'));
+			await refreshAll();
+		} catch (err) {
+			snackbar.show(errorText(err instanceof ApiError ? err.code : 'generic'));
+		}
+	}
 </script>
 
 <svelte:head><title>{t('app_name')}</title></svelte:head>
@@ -28,6 +43,34 @@
 		{/if}
 	</section>
 </div>
+
+<a href="/requests/new" class="md-button md-button--tonal md-state ask"><Icon name="send" size={18} />{t('ask_for_loan')}</a>
+
+{#if data.incoming.length > 0}
+	<h2 class="md-section-title">{t('incoming_requests')}</h2>
+	<ul class="md-list incoming">
+		{#each data.incoming as r (r.id)}
+			<li class="md-list__item">
+				<span class="md-avatar">{initial(r.borrower_name)}</span>
+				<span class="md-list__main">
+					<span class="md-body-large">{t('asks_to_borrow', { name: r.borrower_name, amount: money(r.principal, r.currency) })}</span>
+					<span class="md-body-small md-muted">{r.message || r.purpose || t('rq_until', { date: day(r.expires_at.slice(0, 10)) })}</span>
+				</span>
+				<span class="answers">
+					<button type="button" class="md-button md-button--text md-state" onclick={() => answer(r, false)}>{t('decline')}</button>
+					<button type="button" class="md-button md-button--filled md-state" onclick={() => answer(r, true)}>{t('accept')}</button>
+				</span>
+			</li>
+		{/each}
+	</ul>
+{/if}
+
+{#if data.sentRequests.length > 0}
+	<h2 class="md-section-title">{t('your_requests')}</h2>
+	<ul class="md-list">
+		{#each data.sentRequests as loan (loan.id)}<li><LoanRow {loan} /></li>{/each}
+	</ul>
+{/if}
 
 <h2 class="md-section-title">{t('due_soon')}</h2>
 {#if o.due.length === 0}
@@ -78,5 +121,21 @@
 
 	.empty {
 		padding: 24px 0;
+	}
+
+	.ask {
+		margin-top: 16px;
+	}
+
+	.incoming {
+		background: var(--md-sys-color-primary-container);
+		border-radius: var(--md-sys-shape-lg);
+	}
+
+	.answers {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 4px;
 	}
 </style>
