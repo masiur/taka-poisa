@@ -37,6 +37,12 @@ func newTestServerWith(t *testing.T, identity auth.IdentityProvider) *httptest.S
 // newTestEnv also returns the pool, for tests that need to arrange data directly.
 func newTestEnv(t *testing.T, identity auth.IdentityProvider) (*httptest.Server, *pgxpool.Pool) {
 	t.Helper()
+	return newTestEnvWith(t, func(c *Config) { c.Identity = identity })
+}
+
+// newTestEnvWith lets a test adjust the server config (sign-up, mailer, ...).
+func newTestEnvWith(t *testing.T, configure func(*Config)) (*httptest.Server, *pgxpool.Pool) {
+	t.Helper()
 	base := os.Getenv("TEST_DATABASE_URL")
 	if base == "" {
 		t.Skip("TEST_DATABASE_URL not set")
@@ -69,13 +75,14 @@ func newTestEnv(t *testing.T, identity auth.IdentityProvider) (*httptest.Server,
 		t.Fatal(err)
 	}
 
-	srv := httptest.NewServer(New(Config{
-		DB:       pool,
-		Static:   fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}},
-		Identity: identity,
-		BaseURL:  "http://app.test",
-		Log:      slog.New(slog.DiscardHandler),
-	}))
+	conf := Config{
+		DB:      pool,
+		Static:  fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}},
+		BaseURL: "http://app.test",
+		Log:     slog.New(slog.DiscardHandler),
+	}
+	configure(&conf)
+	srv := httptest.NewServer(New(conf))
 	t.Cleanup(srv.Close)
 	return srv, pool
 }

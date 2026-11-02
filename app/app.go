@@ -51,6 +51,7 @@ type config struct {
 	BaseURL     *url.URL
 	ListenAddr  string
 	SMTP        mail.SMTPConfig
+	Signup      bool
 }
 
 func loadConfig() (config, error) {
@@ -66,6 +67,13 @@ func loadConfig() (config, error) {
 		return cfg, errors.New("BASE_URL must be an absolute http(s) URL")
 	}
 	cfg.BaseURL = base
+	switch os.Getenv("SIGNUP") {
+	case "", "closed":
+	case "open":
+		cfg.Signup = true
+	default:
+		return cfg, errors.New("SIGNUP must be open or closed")
+	}
 	port, err := strconv.Atoi(envOr("SMTP_PORT", "0"))
 	if err != nil {
 		return cfg, errors.New("SMTP_PORT must be a number")
@@ -146,7 +154,8 @@ func Run(ctx context.Context, opts Options) error {
 			Static:        webui.FS(),
 			Identity:      opts.Identity,
 			BaseURL:       cfg.BaseURL.String(),
-			EmailEnabled:  mailer != nil,
+			Mailer:        mailer,
+			Signup:        cfg.Signup,
 			SMSEnabled:    smsSender != nil,
 			Log:           log,
 		}),
@@ -158,7 +167,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "sso", opts.Identity != nil, "email", mailer != nil, "sms", smsSender != nil)
+		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "sso", opts.Identity != nil, "signup", cfg.Signup, "email", mailer != nil, "sms", smsSender != nil)
 		errCh <- srv.ListenAndServe()
 	}()
 	select {
