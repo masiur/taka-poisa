@@ -89,6 +89,129 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 	for _, c := range batch {
 		w.deliver(ctx, c)
 	}
+	n, err := w.runOutbox(ctx)
+	return len(batch) + n, err
+}
+
+// runOutbox expires stale loan requests and delivers request emails, with the same
+// at-most-once and retry rules as reminders.
+func (w *Worker) runOutbox(ctx context.Context) (int, error) {
+	if _, err := w.Ledger.ExpireRequests(ctx); err != nil {
+		return 0, err
+	}
+	if _, err := w.DB.Exec(ctx, `
+		UPDATE outbox SET status = 'failed', last_error = 'interrupted', updated_at = now()
+		WHERE status = 'sending' AND updated_at < now() - make_interval(secs => $1)`, stuckAfter.Seconds()); err != nil {
+		return 0, err
+	}
+	rows, err := w.DB.Query(ctx, `
+		UPDATE outbox SET status = 'sending', attempts = attempts + 1, updated_at = now()
+		WHERE id IN (
+			SELECT id FROM outbox WHERE status = 'planned' AND scheduled_for <= now()
+			ORDER BY scheduled_for LIMIT $1 FOR UPDATE SKIP LOCKED)
+		RETURNING id, kind, account_id, agreement_id, scheduled_for, attempts`, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	type item struct {
+		id, accountID, agreementID int64
+		kind                       string
+		scheduledFor               time.Time
+		attempts                   int
+	}
+	var batch []item
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.id, &it.kind, &it.accountID, &it.agreementID, &it.scheduledFor, &it.attempts); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		batch = append(batch, it)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	finish := func(id int64, status, reason, messageID, lastError string) {
+		if _, err := w.DB.Exec(ctx, `
+			UPDATE outbox SET status = $2, skip_reason = nullif($3, ''), provider_message_id = nullif($4, ''),
+				last_error = nullif($5, ''), sent_at = CASE WHEN $2 = 'sent' THEN now() END, updated_at = now()
+			WHERE id = $1`, id, status, reason, messageID, lastError); err != nil {
+			w.Log.Error("outbox: update failed", "id", id, "err", err)
+		}
+	}
+	retry := func(it item, cause error) {
+		w.Log.Warn("outbox: send failed", "id", it.id, "attempt", it.attempts, "err", cause)
+		if it.attempts >= maxAttempts {
+			finish(it.id, "failed", "", "", cause.Error())
+			return
+		}
+		if _, err := w.DB.Exec(ctx, `
+			UPDATE outbox SET status = 'planned', last_error = $2, updated_at = now(),
+				scheduled_for = now() + make_interval(mins => 5 * $3) WHERE id = $1`, it.id, cause.Error(), it.attempts); err != nil {
+			w.Log.Error("outbox: requeue failed", "id", it.id, "err", err)
+		}
+	}
+
+	for _, it := range batch {
+		switch {
+		case time.Since(it.scheduledFor) > staleAfter:
+			finish(it.id, "skipped", "missed", "", "")
+			continue
+		case w.Mailer == nil:
+			finish(it.id, "skipped", "email_not_configured", "", "")
+			continue
+		}
+		n, err := w.Ledger.RequestNotice(ctx, it.accountID, it.agreementID)
+		if errors.Is(err, ledger.ErrNotFound) {
+			finish(it.id, "skipped", "loan_gone", "", "")
+			continue
+		}
+		if err != nil {
+			retry(it, err)
+			continue
+		}
+		n.Kind = it.kind
+		detail, err := w.Ledger.GetAgreement(ctx, it.accountID, it.agreementID, ledger.Today("UTC"))
+		if err != nil {
+			retry(it, err)
+			continue
+		}
+		installments := make([]ledger.InstallmentInput, len(detail.Installments))
+		for i, x := range detail.Installments {
+			installments[i] = ledger.InstallmentInput{DueOn: x.DueOn, Amount: x.Amount}
+		}
+
+		var link string
+		if it.kind == "request.created" {
+			if n.Status != "requested" {
+				finish(it.id, "skipped", "closed", "", "")
+				continue
+			}
+			if n.LenderEmail == "" {
+				finish(it.id, "skipped", "no_email", "", "")
+				continue
+			}
+			token, err := w.Ledger.CreateRequestLink(ctx, it.accountID, it.agreementID)
+			if err != nil {
+				retry(it, err)
+				continue
+			}
+			link = w.BaseURL + "/r/" + token
+		} else {
+			link = w.BaseURL + "/loans/" + strconv.FormatInt(it.agreementID, 10)
+		}
+
+		sendCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		id, err := w.Mailer.Send(sendCtx, composeRequest(n, installments, link))
+		cancel()
+		if err != nil {
+			retry(it, err)
+			continue
+		}
+		finish(it.id, "sent", "", id, "")
+	}
 	return len(batch), nil
 }
 

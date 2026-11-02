@@ -155,7 +155,7 @@ func (s *Store) GoogleSignIn(ctx context.Context, c GoogleClaims, setup *OwnerIn
 	err := s.db.QueryRow(ctx,
 		`SELECT user_id FROM user_identities WHERE provider = 'google' AND subject = $1`, c.Subject).Scan(&userID)
 	if err == nil {
-		return userID, nil
+		return userID, markVerified(ctx, s.db, userID, c)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
@@ -188,6 +188,18 @@ func linkGoogle(ctx context.Context, db execer, userID int64, c GoogleClaims) er
 		INSERT INTO user_identities (provider, subject, user_id, email) VALUES ('google', $1, $2, $3)
 		ON CONFLICT (provider, subject) DO NOTHING`,
 		c.Subject, userID, validate.NormalizeEmail(c.Email))
+	if err != nil {
+		return err
+	}
+	return markVerified(ctx, db, userID, c)
+}
+
+// markVerified records that the user proved they own their account email (Google verified it).
+// Features that trust an email match, such as incoming loan requests, require this.
+func markVerified(ctx context.Context, db execer, userID int64, c GoogleClaims) error {
+	_, err := db.Exec(ctx, `
+		UPDATE users SET email_verified_at = now()
+		WHERE id = $1 AND email = $2 AND email_verified_at IS NULL`, userID, validate.NormalizeEmail(c.Email))
 	return err
 }
 

@@ -70,6 +70,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("PUT /api/account", s.requireAuth(s.putAccount))
 	s.ledgerRoutes(mux)
 	s.reminderRoutes(mux)
+	s.requestRoutes(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", nil)
 	})

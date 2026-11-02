@@ -169,3 +169,114 @@ func compose(rc ledger.ReminderContext, recipient, tone, link, unsubscribeLink, 
 	m.Text = plain.String()
 	return m
 }
+
+var requestText = map[string]map[string]string{
+	"en": {
+		"subj_created":  "{borrower} asks to borrow {amount}",
+		"greeting":      "Hi {lender},",
+		"body_created":  "{borrower} is asking to borrow {amount} from you, to pay back {plan}.",
+		"message":       "Their message: “{message}”",
+		"deadline":      "Please answer by {expires}.",
+		"cta_created":   "See the request and answer",
+		"footer":        "Sent by Taka Poisa on behalf of {borrower}. Reply to this email to reach them. Nothing is paid or owed until you accept.",
+		"block":         "Don't want requests from {borrower}? Block them",
+		"plan_one":      "on {date}",
+		"plan_many":     "in {count} installments starting {date}",
+		"subj_accepted": "{lender} accepted your request for {amount}",
+		"subj_declined": "{lender} declined your request for {amount}",
+		"note":          "Their note: “{note}”",
+		"cta_decided":   "Open in Taka Poisa",
+	},
+	"bn": {
+		"subj_created":  "{borrower} আপনার কাছে {amount} ধার চাইছেন",
+		"greeting":      "প্রিয় {lender},",
+		"body_created":  "{borrower} আপনার কাছে {amount} ধার চাইছেন, শোধ করবেন {plan}।",
+		"message":       "তার বার্তা: “{message}”",
+		"deadline":      "{expires} তারিখের মধ্যে উত্তর দিন।",
+		"cta_created":   "অনুরোধ দেখুন ও উত্তর দিন",
+		"footer":        "{borrower}এর পক্ষ থেকে টাকা পয়সা এই ইমেইল পাঠিয়েছে। তার সাথে যোগাযোগ করতে এই ইমেইলের উত্তর দিন। আপনি গ্রহণ না করা পর্যন্ত কোনো দেনা-পাওনা হয় না।",
+		"block":         "{borrower}এর অনুরোধ আর চান না? বন্ধ করুন",
+		"plan_one":      "{date} তারিখে",
+		"plan_many":     "{date} থেকে {count} কিস্তিতে",
+		"subj_accepted": "{lender} আপনার {amount} এর অনুরোধ গ্রহণ করেছেন",
+		"subj_declined": "{lender} আপনার {amount} এর অনুরোধ ফিরিয়ে দিয়েছেন",
+		"note":          "তার নোট: “{note}”",
+		"cta_decided":   "টাকা পয়সায় খুলুন",
+	},
+}
+
+// composeRequest writes the email to the lender (a new request) or to the borrower (the answer).
+// For a new request, link is the lender's request page; otherwise the borrower's loan page.
+func composeRequest(n ledger.RequestNotice, installments []ledger.InstallmentInput, link string) mail.Message {
+	created := n.Kind == "request.created"
+	locale := n.BorrowerLoc
+	if created {
+		locale = n.LenderLoc
+	}
+	tr := requestText[locale]
+	if tr == nil {
+		locale, tr = "en", requestText["en"]
+	}
+	vars := map[string]string{
+		"borrower": n.BorrowerName,
+		"lender":   n.LenderName,
+		"amount":   formatMoney(n.Principal, n.Currency, locale),
+		"message":  n.Message,
+		"note":     n.DecisionNote,
+	}
+	if len(installments) > 0 {
+		vars["date"] = formatDate(installments[0].DueOn, locale)
+	}
+	vars["count"] = formatInt(len(installments), locale)
+	if len(installments) == 1 {
+		vars["plan"] = fill(tr["plan_one"], vars)
+	} else {
+		vars["plan"] = fill(tr["plan_many"], vars)
+	}
+	vars["expires"] = formatDate(ledger.NewDate(n.ExpiresAt.Date()), locale)
+
+	v := view{Lang: locale, Brand: map[string]string{"bn": "টাকা পয়সা", "en": "Taka Poisa"}[locale], Link: link}
+	m := mail.Message{}
+	if created {
+		m = mail.Message{To: n.LenderEmail, ToName: n.LenderName, ReplyTo: n.BorrowerEmail, ReplyToName: n.BorrowerName,
+			FromName: n.BorrowerName + " via Taka Poisa"}
+		m.Subject = fill(tr["subj_created"], vars)
+		v.Greeting = fill(tr["greeting"], vars)
+		body := fill(tr["body_created"], vars)
+		if n.Message != "" {
+			body += " " + fill(tr["message"], vars)
+		}
+		v.Body = body
+		v.Total = fill(tr["deadline"], vars)
+		v.CTA = tr["cta_created"]
+		v.Footer = fill(tr["footer"], vars)
+		v.Unsubscribe, v.UnsubscribeLink = fill(tr["block"], vars), link+"?block=1"
+	} else {
+		m = mail.Message{To: n.BorrowerEmail, ToName: n.BorrowerName, FromName: "Taka Poisa"}
+		key := "subj_declined"
+		if n.Status == "active" {
+			key = "subj_accepted"
+		}
+		m.Subject = fill(tr[key], vars)
+		v.Body = m.Subject
+		if n.DecisionNote != "" {
+			v.Total = fill(tr["note"], vars)
+		}
+		v.CTA = tr["cta_decided"]
+	}
+
+	var html bytes.Buffer
+	htmlTmpl.Execute(&html, v)
+	m.HTML = html.String()
+	var plain strings.Builder
+	for _, line := range []string{v.Greeting, v.Body, v.Total, v.CTA + ": " + v.Link, v.Footer} {
+		if line != "" {
+			plain.WriteString(line + "\n\n")
+		}
+	}
+	if v.Unsubscribe != "" {
+		plain.WriteString(v.Unsubscribe + ": " + v.UnsubscribeLink + "\n")
+	}
+	m.Text = plain.String()
+	return m
+}

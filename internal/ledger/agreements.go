@@ -103,6 +103,11 @@ type AgreementSummary struct {
 	NextDueOn   Date      `json:"next_due_on"` // null when nothing is left to pay
 	NextAmount  int64     `json:"next_amount"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Loan requests only.
+	Origin           string     `json:"origin"`
+	RequestMessage   string     `json:"request_message"`
+	RequestExpiresAt *time.Time `json:"request_expires_at"`
+	DecisionNote     string     `json:"decision_note"`
 }
 
 type Payment struct {
@@ -141,7 +146,8 @@ func (s *Store) ListAgreements(ctx context.Context, accountID int64, today Date,
 	rows, err := s.db.Query(ctx, `
 		WITH `+summaryCTE+`
 		SELECT s.id, s.contact_id, c.name, s.direction, s.status, a.currency, s.principal, s.paid,
-			s.remaining, s.overdue, a.started_on, a.purpose, s.next_due_on, s.next_amount, a.created_at
+			s.remaining, s.overdue, a.started_on, a.purpose, s.next_due_on, s.next_amount, a.created_at,
+			a.origin, coalesce(a.request_message, ''), a.request_expires_at, coalesce(a.decision_note, '')
 		FROM summary s
 		JOIN agreements a ON a.id = s.id
 		JOIN contacts c ON c.id = s.contact_id
@@ -157,7 +163,8 @@ func (s *Store) ListAgreements(ctx context.Context, accountID int64, today Date,
 		var a AgreementSummary
 		if err := rows.Scan(&a.ID, &a.ContactID, &a.ContactName, &a.Direction, &a.Status, &a.Currency,
 			&a.Principal, &a.Paid, &a.Remaining, &a.Overdue, &a.StartedOn, &a.Purpose,
-			&a.NextDueOn, &a.NextAmount, &a.CreatedAt); err != nil {
+			&a.NextDueOn, &a.NextAmount, &a.CreatedAt,
+			&a.Origin, &a.RequestMessage, &a.RequestExpiresAt, &a.DecisionNote); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

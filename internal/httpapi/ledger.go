@@ -51,6 +51,12 @@ func (s *server) ledgerError(w http.ResponseWriter, r *http.Request, err error) 
 		writeError(w, http.StatusUnprocessableEntity, "not_eligible", nil)
 	case errors.Is(err, ledger.ErrTooManyClaims):
 		writeError(w, http.StatusTooManyRequests, "rate_limited", nil)
+	case errors.Is(err, ledger.ErrTooManyRequests):
+		writeError(w, http.StatusTooManyRequests, "too_many_requests", nil)
+	case errors.Is(err, ledger.ErrCannotRequest):
+		writeError(w, http.StatusUnprocessableEntity, "cannot_request", nil)
+	case errors.Is(err, ledger.ErrRequestClosed):
+		writeError(w, http.StatusConflict, "request_closed", nil)
 	case errors.Is(err, ledger.ErrBelowPaid):
 		writeError(w, http.StatusUnprocessableEntity, "validation", validate.Errors{"principal": "below_paid"})
 	default:
