@@ -168,6 +168,7 @@ export type ReminderRule = {
 	repeat_count: number | null;
 	send_hour: number | null;
 	recipient: Recipient;
+	channel?: 'email' | 'sms';
 	tone: 'polite' | 'firm';
 	paused: boolean;
 };
@@ -176,6 +177,7 @@ export type ReminderSend = {
 	id: number;
 	rule_id: number | null;
 	recipient: Recipient;
+	channel: 'email' | 'sms';
 	tone: 'polite' | 'firm';
 	status: 'planned' | 'sending' | 'sent' | 'skipped' | 'failed';
 	skip_reason: string;
@@ -189,6 +191,8 @@ export type ReminderView = {
 	recent: ReminderSend[];
 	contact_email: string;
 	contact_opted_out: boolean;
+	contact_phone: string;
+	contact_sms_opted_out: boolean;
 	direction: Direction;
 };
 
@@ -200,6 +204,8 @@ export type Statement = {
 	currency: string;
 	opted_out: boolean;
 	has_email: boolean;
+	sms_opted_out: boolean;
+	has_phone: boolean;
 	loans: (LoanSummary & { installments: Installment[]; payments: Payment[] })[];
 };
 

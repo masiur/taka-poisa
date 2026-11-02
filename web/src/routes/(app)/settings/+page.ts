@@ -3,8 +3,8 @@ import { api, type AccountSettings, type ReminderRule, type RequestLink } from '
 export async function load({ fetch }) {
 	const [settings, defaults, links] = await Promise.all([
 		api<AccountSettings>('GET', '/account', undefined, fetch),
-		api<{ rules: ReminderRule[] }>('GET', '/account/reminder-defaults', undefined, fetch),
+		api<{ rules: ReminderRule[]; sms_enabled: boolean }>('GET', '/account/reminder-defaults', undefined, fetch),
 		api<{ links: RequestLink[] }>('GET', '/request-links', undefined, fetch)
 	]);
-	return { settings, defaultRules: defaults.rules, links: links.links };
+	return { settings, defaultRules: defaults.rules, smsEnabled: defaults.sms_enabled, links: links.links };
 }

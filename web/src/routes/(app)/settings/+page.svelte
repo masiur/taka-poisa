@@ -100,6 +100,7 @@
 		<RuleEditor
 			rules={data.defaultRules}
 			defaultHour={data.settings.send_hour}
+			smsEnabled={data.smsEnabled}
 			onsave={async (rules) => {
 				await api('PUT', '/account/reminder-defaults', { rules });
 				snackbar.show(t('reminders_saved'));

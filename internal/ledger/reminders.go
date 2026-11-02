@@ -33,8 +33,17 @@ type Rule struct {
 	RepeatCount     *int   `json:"repeat_count"`
 	SendHour        *int   `json:"send_hour"`
 	Recipient       string `json:"recipient"` // contact | self
+	Channel         string `json:"channel"`   // email (default) | sms (contact only)
 	Tone            string `json:"tone"`      // polite | firm
 	Paused          bool   `json:"paused"`
+}
+
+// channel is the rule's channel, email when unset.
+func (r Rule) channel() string {
+	if r.Channel == "" {
+		return "email"
+	}
+	return r.Channel
 }
 
 // DefaultRules apply when an account has not set its own defaults: on the due date,
@@ -62,6 +71,8 @@ func ValidateRules(rules []Rule) validate.Errors {
 			r.RepeatCount != nil && (*r.RepeatCount < 1 || *r.RepeatCount > 20),
 			r.SendHour != nil && (*r.SendHour < 0 || *r.SendHour > 23),
 			r.Recipient != "contact" && r.Recipient != "self",
+			r.channel() != "email" && r.channel() != "sms",
+			r.channel() == "sms" && r.Recipient != "contact",
 			r.Tone != "polite" && r.Tone != "firm":
 			e.Add("rules", validate.Invalid)
 			return e
@@ -73,6 +84,7 @@ func ValidateRules(rules []Rule) validate.Errors {
 type PlannedSend struct {
 	RuleID    int64
 	Recipient string
+	Channel   string
 	Tone      string
 	Day       Date
 	At        time.Time
@@ -80,11 +92,12 @@ type PlannedSend struct {
 
 // PlanSends lists the future reminders for an agreement. It is pure so it can be tested
 // without a database. Rules landing on the same day for the same recipient collapse into one
-// send (the firmer tone wins); only recipients in eligible are planned; at most maxPlannedPerLoan.
+// send per channel (the firmer tone wins); only "recipient/channel" pairs in eligible are planned
+// (for example "contact/sms"); at most maxPlannedPerLoan.
 func PlanSends(items []InstallmentState, rules []Rule, now time.Time, loc *time.Location, defaultHour int, eligible map[string]bool) []PlannedSend {
 	type key struct {
-		recipient string
-		day       Date
+		recipient, channel string
+		day                Date
 	}
 	byDay := map[key]PlannedSend{}
 	for _, it := range items {
@@ -92,7 +105,7 @@ func PlanSends(items []InstallmentState, rules []Rule, now time.Time, loc *time.
 			continue
 		}
 		for _, r := range rules {
-			if r.Paused || !eligible[r.Recipient] {
+			if r.Paused || !eligible[r.Recipient+"/"+r.channel()] {
 				continue
 			}
 			start := it.DueOn.AddDays(r.OffsetDays)
@@ -112,10 +125,10 @@ func PlanSends(items []InstallmentState, rules []Rule, now time.Time, loc *time.
 				if !at.After(now) {
 					continue
 				}
-				k := key{r.Recipient, d}
+				k := key{r.Recipient, r.channel(), d}
 				prev, seen := byDay[k]
 				if !seen || (prev.Tone == "polite" && r.Tone == "firm") || (prev.Tone == r.Tone && at.Before(prev.At)) {
-					byDay[k] = PlannedSend{RuleID: r.ID, Recipient: r.Recipient, Tone: r.Tone, Day: d, At: at}
+					byDay[k] = PlannedSend{RuleID: r.ID, Recipient: r.Recipient, Channel: r.channel(), Tone: r.Tone, Day: d, At: at}
 				}
 			}
 		}
@@ -125,7 +138,7 @@ func PlanSends(items []InstallmentState, rules []Rule, now time.Time, loc *time.
 		out = append(out, p)
 	}
 	slices.SortFunc(out, func(a, b PlannedSend) int {
-		return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.Recipient, b.Recipient))
+		return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.Recipient, b.Recipient), cmp.Compare(a.Channel, b.Channel))
 	})
 	if len(out) > maxPlannedPerLoan {
 		out = out[:maxPlannedPerLoan]
@@ -142,7 +155,7 @@ type querier interface {
 
 func loadRules(ctx context.Context, q querier, accountID int64, agreementID *int64) ([]Rule, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, offset_days, repeat_every_days, repeat_count, send_hour, recipient, tone, paused_at IS NOT NULL
+		SELECT id, offset_days, repeat_every_days, repeat_count, send_hour, recipient, channel, tone, paused_at IS NOT NULL
 		FROM reminder_rules
 		WHERE account_id = $1 AND agreement_id IS NOT DISTINCT FROM $2
 		ORDER BY position, id`, accountID, agreementID)
@@ -153,7 +166,7 @@ func loadRules(ctx context.Context, q querier, accountID int64, agreementID *int
 	out := []Rule{}
 	for rows.Next() {
 		var r Rule
-		if err := rows.Scan(&r.ID, &r.OffsetDays, &r.RepeatEveryDays, &r.RepeatCount, &r.SendHour, &r.Recipient, &r.Tone, &r.Paused); err != nil {
+		if err := rows.Scan(&r.ID, &r.OffsetDays, &r.RepeatEveryDays, &r.RepeatCount, &r.SendHour, &r.Recipient, &r.Channel, &r.Tone, &r.Paused); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -165,10 +178,10 @@ func insertRules(ctx context.Context, tx pgx.Tx, accountID int64, agreementID *i
 	for i, r := range rules {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO reminder_rules (account_id, agreement_id, offset_days, repeat_every_days, repeat_count,
-				send_hour, recipient, tone, position, paused_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $10 THEN now() END)`,
+				send_hour, recipient, channel, tone, position, paused_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $11 THEN now() END)`,
 			accountID, agreementID, r.OffsetDays, r.RepeatEveryDays, r.RepeatCount, r.SendHour,
-			r.Recipient, r.Tone, i, r.Paused); err != nil {
+			r.Recipient, r.channel(), r.Tone, i, r.Paused); err != nil {
 			return err
 		}
 	}
@@ -191,19 +204,19 @@ func copyDefaultRules(ctx context.Context, tx pgx.Tx, accountID, agreementID int
 // transaction as every change that can affect reminders, so the plan is never stale.
 func replan(ctx context.Context, tx pgx.Tx, accountID, agreementID int64) error {
 	var (
-		status, direction, tz string
-		sendHour              int
-		contactEmail          *string
-		optedOut, deleted     bool
+		status, direction, tz          string
+		sendHour                       int
+		contactEmail, contactPhone     *string
+		optedOut, smsOptedOut, deleted bool
 	)
 	err := tx.QueryRow(ctx, `
-		SELECT a.status, a.direction, acc.timezone, acc.send_hour, c.email,
-			c.email_opted_out_at IS NOT NULL, c.deleted_at IS NOT NULL
+		SELECT a.status, a.direction, acc.timezone, acc.send_hour, c.email, c.phone_e164,
+			c.email_opted_out_at IS NOT NULL, c.sms_opted_out_at IS NOT NULL, c.deleted_at IS NOT NULL
 		FROM agreements a
 		JOIN accounts acc ON acc.id = a.account_id
 		JOIN contacts c ON c.id = a.contact_id
 		WHERE a.account_id = $1 AND a.id = $2`, accountID, agreementID).
-		Scan(&status, &direction, &tz, &sendHour, &contactEmail, &optedOut, &deleted)
+		Scan(&status, &direction, &tz, &sendHour, &contactEmail, &contactPhone, &optedOut, &smsOptedOut, &deleted)
 	if err != nil {
 		return err
 	}
@@ -246,9 +259,11 @@ func replan(ctx context.Context, tx pgx.Tx, accountID, agreementID int64) error 
 	}
 
 	// Only someone who owes money is reminded: the contact when I lent to them.
+	owes := direction == "lent" && !deleted
 	eligible := map[string]bool{
-		"self":    true,
-		"contact": direction == "lent" && contactEmail != nil && !optedOut && !deleted,
+		"self/email":    true,
+		"contact/email": owes && contactEmail != nil && !optedOut,
+		"contact/sms":   owes && contactPhone != nil && !smsOptedOut,
 	}
 	now := time.Now()
 	plan := PlanSends(Allocate(items, paid, Today(tz)), rules, now, loc, sendHour, eligible)
@@ -258,11 +273,11 @@ func replan(ctx context.Context, tx pgx.Tx, accountID, agreementID int64) error 
 			ruleID = &p.RuleID
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO reminder_sends (account_id, agreement_id, rule_id, recipient, tone, send_day, scheduled_for)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO reminder_sends (account_id, agreement_id, rule_id, recipient, channel, tone, send_day, scheduled_for)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (agreement_id, recipient, channel, send_day) WHERE status IN ('planned', 'sending', 'sent')
 			DO NOTHING`,
-			accountID, agreementID, ruleID, p.Recipient, p.Tone, p.Day, p.At); err != nil {
+			accountID, agreementID, ruleID, p.Recipient, p.Channel, p.Tone, p.Day, p.At); err != nil {
 			return err
 		}
 	}
@@ -346,6 +361,7 @@ type SendRow struct {
 	ID           int64      `json:"id"`
 	RuleID       *int64     `json:"rule_id"`
 	Recipient    string     `json:"recipient"`
+	Channel      string     `json:"channel"`
 	Tone         string     `json:"tone"`
 	Status       string     `json:"status"`
 	SkipReason   string     `json:"skip_reason"`
@@ -354,20 +370,24 @@ type SendRow struct {
 }
 
 type ReminderView struct {
-	Rules           []Rule    `json:"rules"`
-	Upcoming        []SendRow `json:"upcoming"`
-	Recent          []SendRow `json:"recent"`
-	ContactEmail    string    `json:"contact_email"`
-	ContactOptedOut bool      `json:"contact_opted_out"`
-	Direction       string    `json:"direction"`
+	Rules              []Rule    `json:"rules"`
+	Upcoming           []SendRow `json:"upcoming"`
+	Recent             []SendRow `json:"recent"`
+	ContactEmail       string    `json:"contact_email"`
+	ContactOptedOut    bool      `json:"contact_opted_out"`
+	ContactPhone       string    `json:"contact_phone"`
+	ContactSMSOptedOut bool      `json:"contact_sms_opted_out"`
+	Direction          string    `json:"direction"`
 }
 
 func (s *Store) Reminders(ctx context.Context, accountID, agreementID int64) (ReminderView, error) {
 	v := ReminderView{Upcoming: []SendRow{}, Recent: []SendRow{}}
 	err := s.db.QueryRow(ctx, `
-		SELECT a.direction, coalesce(c.email, ''), c.email_opted_out_at IS NOT NULL
+		SELECT a.direction, coalesce(c.email, ''), c.email_opted_out_at IS NOT NULL,
+			coalesce(c.phone_e164, ''), c.sms_opted_out_at IS NOT NULL
 		FROM agreements a JOIN contacts c ON c.id = a.contact_id
-		WHERE a.account_id = $1 AND a.id = $2`, accountID, agreementID).Scan(&v.Direction, &v.ContactEmail, &v.ContactOptedOut)
+		WHERE a.account_id = $1 AND a.id = $2`, accountID, agreementID).
+		Scan(&v.Direction, &v.ContactEmail, &v.ContactOptedOut, &v.ContactPhone, &v.ContactSMSOptedOut)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -378,11 +398,11 @@ func (s *Store) Reminders(ctx context.Context, accountID, agreementID int64) (Re
 		return v, err
 	}
 	rows, err := s.db.Query(ctx, `
-		(SELECT id, rule_id, recipient, tone, status, coalesce(skip_reason, ''), scheduled_for, sent_at
+		(SELECT id, rule_id, recipient, channel, tone, status, coalesce(skip_reason, ''), scheduled_for, sent_at
 		 FROM reminder_sends WHERE agreement_id = $1 AND status IN ('planned', 'sending')
 		 ORDER BY scheduled_for LIMIT 10)
 		UNION ALL
-		(SELECT id, rule_id, recipient, tone, status, coalesce(skip_reason, ''), scheduled_for, sent_at
+		(SELECT id, rule_id, recipient, channel, tone, status, coalesce(skip_reason, ''), scheduled_for, sent_at
 		 FROM reminder_sends WHERE agreement_id = $1 AND status IN ('sent', 'skipped', 'failed')
 		 ORDER BY scheduled_for DESC LIMIT 20)`, agreementID)
 	if err != nil {
@@ -391,7 +411,7 @@ func (s *Store) Reminders(ctx context.Context, accountID, agreementID int64) (Re
 	defer rows.Close()
 	for rows.Next() {
 		var r SendRow
-		if err := rows.Scan(&r.ID, &r.RuleID, &r.Recipient, &r.Tone, &r.Status, &r.SkipReason, &r.ScheduledFor, &r.SentAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.RuleID, &r.Recipient, &r.Channel, &r.Tone, &r.Status, &r.SkipReason, &r.ScheduledFor, &r.SentAt); err != nil {
 			return v, err
 		}
 		if r.Status == "planned" || r.Status == "sending" {
@@ -454,8 +474,11 @@ func (s *Store) SetDefaultRules(ctx context.Context, accountID int64, rules []Ru
 }
 
 // SendNow queues a reminder for immediate delivery. It still counts towards the
-// one-email-per-day limit, so it cannot be used to spam.
-func (s *Store) SendNow(ctx context.Context, accountID, userID, agreementID int64, recipient string) error {
+// one-message-per-day limit (per channel), so it cannot be used to spam.
+func (s *Store) SendNow(ctx context.Context, accountID, userID, agreementID int64, recipient, channel string) error {
+	if channel == "" {
+		channel = "email"
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -469,35 +492,40 @@ func (s *Store) SendNow(ctx context.Context, accountID, userID, agreementID int6
 		return ErrNotActive
 	}
 	var direction, tz string
-	var email *string
-	var optedOut bool
+	var email, phone *string
+	var optedOut, smsOptedOut bool
 	if err := tx.QueryRow(ctx, `
-		SELECT a.direction, acc.timezone, c.email, c.email_opted_out_at IS NOT NULL
+		SELECT a.direction, acc.timezone, c.email, c.phone_e164, c.email_opted_out_at IS NOT NULL, c.sms_opted_out_at IS NOT NULL
 		FROM agreements a JOIN accounts acc ON acc.id = a.account_id JOIN contacts c ON c.id = a.contact_id
-		WHERE a.id = $1`, agreementID).Scan(&direction, &tz, &email, &optedOut); err != nil {
+		WHERE a.id = $1`, agreementID).Scan(&direction, &tz, &email, &phone, &optedOut, &smsOptedOut); err != nil {
 		return err
 	}
-	if recipient == "contact" && (direction != "lent" || email == nil || optedOut) {
+	switch {
+	case recipient == "self" && channel != "email",
+		recipient == "contact" && direction != "lent",
+		recipient == "contact" && channel == "email" && (email == nil || optedOut),
+		recipient == "contact" && channel == "sms" && (phone == nil || smsOptedOut):
 		return ErrNotEligible
 	}
 	// A rule-planned send for today (if any) is replaced by this one; a queued manual one is not.
 	if _, err := tx.Exec(ctx, `
-		DELETE FROM reminder_sends WHERE agreement_id = $1 AND recipient = $2 AND send_day = $3 AND status = 'planned' AND NOT manual`,
-		agreementID, recipient, Today(tz)); err != nil {
+		DELETE FROM reminder_sends WHERE agreement_id = $1 AND recipient = $2 AND channel = $3 AND send_day = $4
+			AND status = 'planned' AND NOT manual`,
+		agreementID, recipient, channel, Today(tz)); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO reminder_sends (account_id, agreement_id, recipient, tone, send_day, scheduled_for, manual)
-		VALUES ($1, $2, $3, 'polite', $4, now(), true)
+		INSERT INTO reminder_sends (account_id, agreement_id, recipient, channel, tone, send_day, scheduled_for, manual)
+		VALUES ($1, $2, $3, $4, 'polite', $5, now(), true)
 		ON CONFLICT (agreement_id, recipient, channel, send_day) WHERE status IN ('planned', 'sending', 'sent')
-		DO NOTHING`, accountID, agreementID, recipient, Today(tz))
+		DO NOTHING`, accountID, agreementID, recipient, channel, Today(tz))
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrAlreadySentToday
 	}
-	if err := logActivity(ctx, tx, accountID, agreementID, a.contactID, userID, "reminder.queued", map[string]any{"recipient": recipient}); err != nil {
+	if err := logActivity(ctx, tx, accountID, agreementID, a.contactID, userID, "reminder.queued", map[string]any{"recipient": recipient, "channel": channel}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

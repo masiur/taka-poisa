@@ -12,6 +12,7 @@ import (
 
 	"github.com/masiur/taka-poisa/internal/ledger"
 	"github.com/masiur/taka-poisa/internal/mail"
+	"github.com/masiur/taka-poisa/internal/sms"
 )
 
 const (
@@ -29,6 +30,7 @@ type Worker struct {
 	DB      *pgxpool.Pool
 	Ledger  *ledger.Store
 	Mailer  mail.Mailer // nil when SMTP is not configured
+	SMS     sms.Sender  // nil when no SMS gateway is configured
 	BaseURL string
 	Log     *slog.Logger
 }
@@ -51,7 +53,7 @@ func (w *Worker) Run(ctx context.Context) {
 
 type claimed struct {
 	id, accountID, agreementID int64
-	recipient, tone            string
+	recipient, channel, tone   string
 	scheduledFor               time.Time
 	attempts                   int
 }
@@ -69,14 +71,14 @@ func (w *Worker) RunOnce(ctx context.Context) (int, error) {
 		WHERE id IN (
 			SELECT id FROM reminder_sends WHERE status = 'planned' AND scheduled_for <= now()
 			ORDER BY scheduled_for LIMIT $1 FOR UPDATE SKIP LOCKED)
-		RETURNING id, account_id, agreement_id, recipient, tone, scheduled_for, attempts`, batchSize)
+		RETURNING id, account_id, agreement_id, recipient, channel, tone, scheduled_for, attempts`, batchSize)
 	if err != nil {
 		return 0, err
 	}
 	var batch []claimed
 	for rows.Next() {
 		var c claimed
-		if err := rows.Scan(&c.id, &c.accountID, &c.agreementID, &c.recipient, &c.tone, &c.scheduledFor, &c.attempts); err != nil {
+		if err := rows.Scan(&c.id, &c.accountID, &c.agreementID, &c.recipient, &c.channel, &c.tone, &c.scheduledFor, &c.attempts); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -190,7 +192,11 @@ func (w *Worker) deliver(ctx context.Context, c claimed) {
 		w.finish(ctx, c, "skipped", "missed", "", "")
 		return
 	}
-	if w.Mailer == nil {
+	if c.channel == "sms" && w.SMS == nil {
+		w.finish(ctx, c, "skipped", "sms_not_configured", "", "")
+		return
+	}
+	if c.channel != "sms" && w.Mailer == nil {
 		w.finish(ctx, c, "skipped", "email_not_configured", "", "")
 		return
 	}
@@ -208,11 +214,34 @@ func (w *Worker) deliver(ctx context.Context, c claimed) {
 	case rc.Status != "active" || rc.Remaining <= 0:
 		w.finish(ctx, c, "skipped", "paid", "", "")
 		return
-	case c.recipient == "contact" && (rc.Direction != "lent" || rc.ContactEmail == ""):
+	case c.channel == "sms" && (rc.Direction != "lent" || rc.ContactPhone == ""):
+		w.finish(ctx, c, "skipped", "no_phone", "", "")
+		return
+	case c.channel == "sms" && rc.SMSOptedOut:
+		w.finish(ctx, c, "skipped", "opted_out", "", "")
+		return
+	case c.channel != "sms" && c.recipient == "contact" && (rc.Direction != "lent" || rc.ContactEmail == ""):
 		w.finish(ctx, c, "skipped", "no_email", "", "")
 		return
-	case c.recipient == "contact" && rc.OptedOut:
+	case c.channel != "sms" && c.recipient == "contact" && rc.OptedOut:
 		w.finish(ctx, c, "skipped", "opted_out", "", "")
+		return
+	}
+
+	if c.channel == "sms" {
+		token, err := w.Ledger.CreateStatementLink(ctx, c.accountID, rc.ContactID)
+		if err != nil {
+			w.retry(ctx, c, err)
+			return
+		}
+		sendCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+		id, err := w.SMS.Send(sendCtx, sms.Message{To: rc.ContactPhone, Text: composeSMS(rc, c.tone, w.BaseURL+"/s/"+token)})
+		if err != nil {
+			w.retry(ctx, c, err)
+			return
+		}
+		w.finish(ctx, c, "sent", "", id, "")
 		return
 	}
 
@@ -267,8 +296,8 @@ func (w *Worker) finish(ctx context.Context, c claimed, status, reason, messageI
 	if status == "sent" {
 		if _, err := w.DB.Exec(ctx, `
 			INSERT INTO activity (account_id, agreement_id, action, data)
-			VALUES ($1, $2, 'reminder.sent', jsonb_build_object('recipient', $3::text))`,
-			c.accountID, c.agreementID, c.recipient); err != nil {
+			VALUES ($1, $2, 'reminder.sent', jsonb_build_object('recipient', $3::text, 'channel', $4::text))`,
+			c.accountID, c.agreementID, c.recipient, c.channel); err != nil {
 			w.Log.Error("reminders: activity failed", "send_id", c.id, "err", err)
 		}
 	}

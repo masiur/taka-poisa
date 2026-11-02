@@ -404,3 +404,42 @@ func ctaLine(v view) string {
 	}
 	return v.CTA + ": " + v.Link
 }
+
+var smsText = map[string]map[string]string{
+	"en": {
+		"before":       "{owner}: reminder, {amount} due on {date}. Details or tell them you paid: {link}",
+		"due":          "{owner}: {amount} is due today. Details or tell them you paid: {link}",
+		"overdue":      "{owner}: {amount} is still due since {date}. Already paid? Tell them here: {link}",
+		"overdue_firm": "{owner}: {amount} is {days} days overdue. Please pay now. {link}",
+	},
+	"bn": {
+		"before":       "{owner}: মনে করিয়ে দিচ্ছি, {date} তারিখে {amount} দেওয়ার কথা। বিস্তারিত: {link}",
+		"due":          "{owner}: আজ {amount} দেওয়ার দিন। বিস্তারিত: {link}",
+		"overdue":      "{owner}: {date} থেকে {amount} বাকি। দিয়ে থাকলে জানান: {link}",
+		"overdue_firm": "{owner}: {amount} {days} দিন বকেয়া। দয়া করে এখনই পরিশোধ করুন। {link}",
+	},
+}
+
+// composeSMS writes a short reminder to the contact; the link opens their statement page, where
+// they can say they paid or stop SMS. Bangla SMS uses more segments, so the text stays brief.
+func composeSMS(rc ledger.ReminderContext, tone, link string) string {
+	locale := rc.ContactLocale
+	tr := smsText[locale]
+	if tr == nil {
+		locale, tr = "en", smsText["en"]
+	}
+	vars := map[string]string{"owner": rc.OwnerName, "link": link}
+	k := kind(rc)
+	if k == "overdue" {
+		vars["amount"] = formatMoney(rc.Overdue, rc.Currency, locale)
+		vars["date"] = formatDate(rc.OverdueSince, locale)
+		vars["days"] = formatInt(rc.OverdueSince.DaysBefore(rc.Today), locale)
+		if tone == "firm" {
+			k = "overdue_firm"
+		}
+	} else {
+		vars["amount"] = formatMoney(rc.NextAmount, rc.Currency, locale)
+		vars["date"] = formatDate(rc.NextDueOn, locale)
+	}
+	return fill(tr[k], vars)
+}

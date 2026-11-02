@@ -27,6 +27,7 @@ type Config struct {
 	Identity      auth.IdentityProvider // outside sign-in; nil on the open-source server
 	BaseURL       string                // public URL, for links handed out (statement pages)
 	EmailEnabled  bool                  // SMTP configured; shown to the owner next to reminders
+	SMSEnabled    bool                  // an SMS gateway is configured
 	Log           *slog.Logger
 }
 
@@ -38,6 +39,7 @@ type server struct {
 	identity      auth.IdentityProvider
 	baseURL       string
 	emailEnabled  bool
+	smsEnabled    bool
 	secureCookies bool
 	loginLimit    *limiter
 	askLimit      *limiter
@@ -53,6 +55,7 @@ func New(cfg Config) http.Handler {
 		identity:      cfg.Identity,
 		baseURL:       cfg.BaseURL,
 		emailEnabled:  cfg.EmailEnabled,
+		smsEnabled:    cfg.SMSEnabled,
 		secureCookies: cfg.SecureCookies,
 		loginLimit:    newLimiter(10, 15*time.Minute),
 		askLimit:      newLimiter(5, askLimitWindow),

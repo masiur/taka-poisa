@@ -22,6 +22,7 @@ import (
 	"github.com/masiur/taka-poisa/internal/ledger"
 	"github.com/masiur/taka-poisa/internal/mail"
 	"github.com/masiur/taka-poisa/internal/reminders"
+	"github.com/masiur/taka-poisa/internal/sms"
 	"github.com/masiur/taka-poisa/internal/webui"
 )
 
@@ -32,11 +33,16 @@ type (
 	IdentityProvider = auth.IdentityProvider
 	// ExternalIdentity is the verified person an IdentityProvider returns.
 	ExternalIdentity = auth.ExternalIdentity
+	// SMSSender delivers SMS reminders; see sms.Sender.
+	SMSSender = sms.Sender
+	// SMSMessage is one SMS (To in E.164).
+	SMSMessage = sms.Message
 )
 
 // Options are the extensions a build adds. The zero value is the open-source server.
 type Options struct {
 	Identity IdentityProvider // nil: email and password only
+	SMS      SMSSender        // nil: the gateway from SMS_PROVIDER (bring your own), if any
 	Log      *slog.Logger     // nil: JSON to stdout
 }
 
@@ -115,8 +121,14 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	smsSender := opts.SMS
+	if smsSender == nil {
+		if smsSender, err = sms.FromEnv(); err != nil {
+			return err
+		}
+	}
 	ledgerStore := ledger.NewStore(pool)
-	worker := &reminders.Worker{DB: pool, Ledger: ledgerStore, Mailer: mailer, BaseURL: cfg.BaseURL.String(), Log: log}
+	worker := &reminders.Worker{DB: pool, Ledger: ledgerStore, Mailer: mailer, SMS: smsSender, BaseURL: cfg.BaseURL.String(), Log: log}
 	go func() {
 		if n, err := ledgerStore.ReplanAll(ctx); err != nil {
 			log.Error("replan at startup failed", "err", err)
@@ -135,6 +147,7 @@ func Run(ctx context.Context, opts Options) error {
 			Identity:      opts.Identity,
 			BaseURL:       cfg.BaseURL.String(),
 			EmailEnabled:  mailer != nil,
+			SMSEnabled:    smsSender != nil,
 			Log:           log,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -145,7 +158,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "sso", opts.Identity != nil, "email", mailer != nil)
+		log.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "sso", opts.Identity != nil, "email", mailer != nil, "sms", smsSender != nil)
 		errCh <- srv.ListenAndServe()
 	}()
 	select {

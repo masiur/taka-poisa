@@ -28,6 +28,7 @@ Backups: `docker compose exec db pg_dump -U takapoisa takapoisa > backup.sql`.
 | `BASE_URL` | `http://localhost:8080` | Public URL of the app |
 | `LISTEN_ADDR` | `:8080` | Address the server listens on |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_TLS` | (empty) | Email for reminders, see below |
+| `SMS_PROVIDER` and `SMS_HTTP_*` / `TWILIO_*` | (empty) | SMS reminders through your own gateway, see below |
 
 Migrations run automatically on start.
 
@@ -49,6 +50,20 @@ docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
 ```bash
 SMTP_HOST=localhost SMTP_PORT=1025 SMTP_TLS=none SMTP_FROM=reminders@example.test
 ```
+
+### SMS (optional, bring your own gateway)
+
+Reminders can also go by SMS to contacts with a phone number. Use any SMS gateway with an HTTP API
+(most Bangladeshi providers) or Twilio. Set `SMS_PROVIDER` and the gateway settings (see `.env.example`):
+
+- `SMS_PROVIDER=http`: `SMS_HTTP_URL` and, for POST APIs, `SMS_HTTP_BODY` are templates with the placeholders
+  `{to}` (`+8801712345678`), `{to_digits}` (`8801712345678`), `{to_local}` (`01712345678`) and `{message}`.
+  Values are URL-encoded, or JSON-escaped when `SMS_HTTP_CONTENT_TYPE` is JSON. If your gateway answers
+  HTTP 200 even on errors, set `SMS_HTTP_SUCCESS` to text that only a successful response contains.
+- `SMS_PROVIDER=twilio`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`.
+
+Then choose "SMS" on a reminder rule. Contacts can stop SMS from their statement page. Bangla SMS uses more
+message segments than English (about 70 characters each), so they cost more per message.
 
 ### Signing in
 

@@ -77,9 +77,10 @@
 
 	// Unsubscribe
 	let unsubOpen = $state(false);
+	let unsubChannel = $state<'email' | 'sms'>('email');
 	async function unsubscribe() {
 		try {
-			await api('POST', `/public/statement/${token}/optout`);
+			await api('POST', `/public/statement/${token}/optout?channel=${unsubChannel}`);
 			unsubOpen = false;
 			await refreshAll();
 		} catch (err) {
@@ -160,8 +161,15 @@
 				{#if st.opted_out}
 					<p>{t('st_unsubscribed')}</p>
 				{:else if st.has_email}
-					<button type="button" class="md-button md-button--text md-state" onclick={() => (unsubOpen = true)}>
+					<button type="button" class="md-button md-button--text md-state" onclick={() => { unsubChannel = 'email'; unsubOpen = true; }}>
 						<Icon name="notifications_off" size={18} />{t('st_unsubscribe')}
+					</button>
+				{/if}
+				{#if st.sms_opted_out}
+					<p>{t('st_sms_stopped')}</p>
+				{:else if st.has_phone}
+					<button type="button" class="md-button md-button--text md-state" onclick={() => { unsubChannel = 'sms'; unsubOpen = true; }}>
+						<Icon name="notifications_off" size={18} />{t('st_stop_sms')}
 					</button>
 				{/if}
 			</footer>
@@ -187,11 +195,11 @@
 		{/snippet}
 	</Dialog>
 
-	<Dialog bind:open={unsubOpen} title={t('st_unsubscribe')}>
-		<p class="md-body-medium">{t('st_unsubscribe_confirm', { owner: st.owner_name })}</p>
+	<Dialog bind:open={unsubOpen} title={unsubChannel === 'sms' ? t('st_stop_sms') : t('st_unsubscribe')}>
+		<p class="md-body-medium">{t(unsubChannel === 'sms' ? 'st_stop_sms_confirm' : 'st_unsubscribe_confirm', { owner: st.owner_name })}</p>
 		{#snippet actions()}
 			<button type="button" class="md-button md-button--text md-state" onclick={() => (unsubOpen = false)}>{t('cancel')}</button>
-			<button type="button" class="md-button md-button--filled md-state" onclick={unsubscribe}>{t('st_unsubscribe')}</button>
+			<button type="button" class="md-button md-button--filled md-state" onclick={unsubscribe}>{unsubChannel === 'sms' ? t('st_stop_sms') : t('st_unsubscribe')}</button>
 		{/snippet}
 	</Dialog>
 {/if}

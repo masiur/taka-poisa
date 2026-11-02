@@ -24,7 +24,7 @@ func (s *server) reminderRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/public/statement/{token}", s.publicStatement)
 	mux.HandleFunc("POST /api/public/statement/{token}/claims", s.publicClaim)
 	mux.HandleFunc("POST /api/public/statement/{token}/optout", s.publicOptOut)
-	mux.HandleFunc("POST /api/public/unsubscribe/{token}", s.publicOptOut) // RFC 8058 one-click
+	mux.HandleFunc("POST /api/public/unsubscribe/{token}", s.publicOptOut) // RFC 8058 one-click (email)
 }
 
 func (s *server) getReminders(w http.ResponseWriter, r *http.Request, p auth.Principal) {
@@ -38,7 +38,7 @@ func (s *server) getReminders(w http.ResponseWriter, r *http.Request, p auth.Pri
 		s.ledgerError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"reminders": v, "email_enabled": s.emailEnabled})
+	writeJSON(w, http.StatusOK, map[string]any{"reminders": v, "email_enabled": s.emailEnabled, "sms_enabled": s.smsEnabled})
 }
 
 func decodeRules(w http.ResponseWriter, r *http.Request) ([]ledger.Rule, bool) {
@@ -83,15 +83,19 @@ func (s *server) sendNow(w http.ResponseWriter, r *http.Request, p auth.Principa
 	}
 	var in struct {
 		Recipient string `json:"recipient"`
+		Channel   string `json:"channel"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.Recipient != "contact" && in.Recipient != "self" {
+	if in.Channel == "" {
+		in.Channel = "email"
+	}
+	if (in.Recipient != "contact" && in.Recipient != "self") || (in.Channel != "email" && in.Channel != "sms") {
 		writeError(w, http.StatusUnprocessableEntity, "validation", validate.Errors{"recipient": validate.Invalid})
 		return
 	}
-	if err := s.ledger.SendNow(r.Context(), p.AccountID, p.UserID, id, in.Recipient); err != nil {
+	if err := s.ledger.SendNow(r.Context(), p.AccountID, p.UserID, id, in.Recipient, in.Channel); err != nil {
 		s.ledgerError(w, r, err)
 		return
 	}
@@ -134,7 +138,7 @@ func (s *server) getReminderDefaults(w http.ResponseWriter, r *http.Request, p a
 		s.ledgerError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rules": rules})
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "sms_enabled": s.smsEnabled})
 }
 
 func (s *server) putReminderDefaults(w http.ResponseWriter, r *http.Request, p auth.Principal) {
@@ -189,7 +193,12 @@ func (s *server) publicClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) publicOptOut(w http.ResponseWriter, r *http.Request) {
-	err := s.ledger.OptOut(r.Context(), r.PathValue("token"))
+	// ?channel=sms stops SMS; anything else (including the email one-click) stops email.
+	channel := "email"
+	if r.URL.Query().Get("channel") == "sms" {
+		channel = "sms"
+	}
+	err := s.ledger.OptOut(r.Context(), r.PathValue("token"), channel)
 	if errors.Is(err, ledger.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "link_expired", nil)
 		return

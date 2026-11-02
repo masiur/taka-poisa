@@ -71,7 +71,8 @@ One codebase, two ways to run it:
 
 ### Later (phase 5+)
 
-- SMS via a Bangladeshi gateway (SSL Wireless, Alpha SMS, BulkSMSBD…); Twilio for other countries.
+- ~~SMS~~ **built**: bring-your-own gateway in the open-source core (generic HTTP template, fits most Bangladeshi
+  gateways; Twilio). The hosted app adds managed SMS credits through `app.Options.SMS`.
 - Recurring obligations (rent, membership dues, tuition) with no end date.
 - Payment instructions on the statement page (bKash/Nagad number, payment link).
 - Receipt PDF when an agreement is settled.
@@ -81,7 +82,7 @@ One codebase, two ways to run it:
 
 ### Hosted-only
 
-- Google sign-in (compiled only into the hosted build with `-tags hosted`; self-hosted builds ignore `GOOGLE_*`).
+- Google sign-in, plugged in through `app.Options.Identity` from the private `taka-poisa-cloud` repo.
 - Managed email at higher limits, SMS credits, WhatsApp reminders (Meta business verification).
 - Custom sending domain, automatic backups, team books (shop owner + staff with roles).
 
@@ -141,6 +142,16 @@ Anyone can ask *me* to lend money through a link I share (the reverse of a loan 
 - **Spam**: hidden honeypot field, 5 submissions per IP per hour, 3 per email per week, 20 open per account,
   block list (blocking closes the request silently and removes a contact with no other records).
 - **Emails**: to me when a request arrives; to them when approved, declined, or sent (with their statement link).
+
+## Open-source core and the private cloud repo
+
+- **`taka-poisa`** (public, AGPL): the whole product. `app.Run(ctx, app.Options{})` is the self-hosted server.
+- **`taka-poisa-cloud`** (private): `app.Run(ctx, app.Options{Identity: google, SMS: managed, ...})` plus
+  hosted-only code (Google sign-in now; billing, managed SMS, backups later). Core is a pinned git submodule;
+  its Dockerfile builds the core UI and the cloud binary.
+- Extension points are small interfaces in the public `app` package, added only when an extension needs one:
+  `IdentityProvider` and `SMSSender` so far.
+- Before accepting outside contributions to the core, require a CLA, so the closed hosted build stays allowed.
 
 ## Data model (PostgreSQL)
 
@@ -250,10 +261,10 @@ Same binary. Behaviour switches by config, not by a separate codebase.
 | | Self-hosted | Hosted |
 |---|---|---|
 | Sign-up | First visitor creates the owner; then invite-only (`SIGNUP=closed`) | Open, with email verification |
-| Sign-in | Email and password | Email and password, plus **Google sign-in** (hosted build only: `-tags hosted`) |
+| Sign-in | Email and password | Email and password, plus **Google sign-in** (in the private `taka-poisa-cloud` repo) |
 | Accounts | One (more possible) | Many, RLS on |
 | Email | Your SMTP | Managed, per-account caps by plan |
-| SMS / WhatsApp | Your gateway keys (later) | Credits |
+| SMS / WhatsApp | Your own SMS gateway (built) | Managed SMS credits; WhatsApp later |
 | Backups | Your job (`pg_dump` doc) | Managed |
 | Billing | None | Plans + payment gateway (decide: SSLCommerz / bKash / Stripe) |
 

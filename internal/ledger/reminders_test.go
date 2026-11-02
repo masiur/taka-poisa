@@ -22,7 +22,7 @@ func TestPlanSends(t *testing.T) {
 		{ID: 4, OffsetDays: 1, Recipient: "self", Tone: "polite", RepeatEveryDays: ptr(2), RepeatCount: ptr(1)}, // owner: day after, then +2
 		{ID: 5, OffsetDays: 10, Recipient: "contact", Tone: "polite", Paused: true},
 	}
-	got := PlanSends(items, rules, now, dhaka, 9, map[string]bool{"contact": true, "self": true})
+	got := PlanSends(items, rules, now, dhaka, 9, map[string]bool{"contact/email": true, "self/email": true})
 
 	type row struct {
 		who, day, tone string
@@ -58,7 +58,7 @@ func TestPlanSendsSkipsIneligibleAndCaps(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	items := []InstallmentState{{Seq: 1, DueOn: d("2026-02-01"), Amount: 1, Remaining: 1}}
 	rules := []Rule{{ID: 1, Recipient: "contact", Tone: "polite"}}
-	if got := PlanSends(items, rules, now, time.UTC, 9, map[string]bool{"self": true}); len(got) != 0 {
+	if got := PlanSends(items, rules, now, time.UTC, 9, map[string]bool{"self/email": true}); len(got) != 0 {
 		t.Fatalf("ineligible contact planned: %v", got)
 	}
 
@@ -70,7 +70,7 @@ func TestPlanSendsSkipsIneligibleAndCaps(t *testing.T) {
 		{ID: 1, OffsetDays: 0, Recipient: "contact", Tone: "polite", RepeatEveryDays: ptr(1), RepeatCount: ptr(20)},
 		{ID: 2, OffsetDays: 0, Recipient: "self", Tone: "polite", RepeatEveryDays: ptr(1), RepeatCount: ptr(20)},
 	}
-	got := PlanSends(many, rules, now, time.UTC, 9, map[string]bool{"contact": true, "self": true})
+	got := PlanSends(many, rules, now, time.UTC, 9, map[string]bool{"contact/email": true, "self/email": true})
 	if len(got) != maxPlannedPerLoan {
 		t.Fatalf("planned %d, want cap %d", len(got), maxPlannedPerLoan)
 	}

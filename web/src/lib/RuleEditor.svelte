@@ -12,11 +12,13 @@
 		rules,
 		contactName = '',
 		defaultHour,
+		smsEnabled = false,
 		onsave
 	}: {
 		rules: ReminderRule[];
 		contactName?: string;
 		defaultHour: number;
+		smsEnabled?: boolean;
 		onsave: (rules: ReminderRule[]) => Promise<void>;
 	} = $props();
 
@@ -44,6 +46,7 @@
 	function details(r: ReminderRule) {
 		const parts = [
 			r.recipient === 'self' ? t('to_me') : contactName ? t('to_contact', { name: contactName }) : t('to_contact_generic'),
+			r.channel === 'sms' ? t('channel_sms') : t('channel_email'),
 			r.tone === 'firm' ? t('tone_firm') : t('tone_polite'),
 			hourLabel(r.send_hour ?? defaultHour)
 		];
@@ -61,7 +64,7 @@
 	// Add / edit dialog
 	let open = $state(false);
 	let editing = $state<number | null>(null);
-	let form = $state({ offset: '0', recipient: 'contact', tone: 'polite', hour: '', repeat: false, every: '3', count: '3' });
+	let form = $state({ offset: '0', recipient: 'contact', channel: 'email', tone: 'polite', hour: '', repeat: false, every: '3', count: '3' });
 	let formError = $state('');
 
 	function openEditor(index: number | null) {
@@ -70,6 +73,7 @@
 		form = {
 			offset: String(r?.offset_days ?? 0),
 			recipient: r?.recipient ?? 'contact',
+			channel: r?.channel ?? 'email',
 			tone: r?.tone ?? 'polite',
 			hour: r?.send_hour == null ? '' : String(r.send_hour),
 			repeat: !!r?.repeat_every_days,
@@ -92,6 +96,8 @@
 		const r: ReminderRule = {
 			offset_days: offset,
 			recipient: form.recipient as ReminderRule['recipient'],
+			// SMS goes to the contact only.
+			channel: form.recipient === 'contact' && form.channel === 'sms' ? 'sms' : 'email',
 			tone: form.tone as ReminderRule['tone'],
 			send_hour: form.hour === '' ? null : Number(form.hour),
 			repeat_every_days: form.repeat ? every : null,
@@ -166,6 +172,12 @@
 			<option value="contact">{contactName ? t('to_contact', { name: contactName }) : t('to_contact_generic')}</option>
 			<option value="self">{t('to_me')}</option>
 		</SelectField>
+		{#if smsEnabled && form.recipient === 'contact'}
+			<SelectField id="rule_channel" label={t('channel')} bind:value={form.channel}>
+				<option value="email">{t('channel_email')}</option>
+				<option value="sms">{t('channel_sms')}</option>
+			</SelectField>
+		{/if}
 		<SelectField id="rule_tone" label={t('tone')} bind:value={form.tone}>
 			<option value="polite">{t('tone_polite')}</option>
 			<option value="firm">{t('tone_firm')}</option>

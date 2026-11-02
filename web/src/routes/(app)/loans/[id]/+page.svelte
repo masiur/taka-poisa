@@ -26,6 +26,7 @@
 	const payments = $derived(loan.payments.filter((p) => p.status !== 'pending'));
 	const rem = $derived(data.reminders);
 	const contactReachable = $derived(rem.direction === 'lent' && !!rem.contact_email && !rem.contact_opted_out);
+	const contactSMS = $derived(data.smsEnabled && rem.direction === 'lent' && !!rem.contact_phone && !rem.contact_sms_opted_out);
 
 	async function resolveClaim(p: Payment, confirm: boolean) {
 		try {
@@ -37,9 +38,9 @@
 		}
 	}
 
-	async function sendNow(recipient: 'contact' | 'self') {
+	async function sendNow(recipient: 'contact' | 'self', channel: 'email' | 'sms' = 'email') {
 		try {
-			await api('POST', `/agreements/${loan.id}/reminders/send-now`, { recipient });
+			await api('POST', `/agreements/${loan.id}/reminders/send-now`, { recipient, channel });
 			snackbar.show(t('reminder_queued'));
 			await refreshAll();
 		} catch (err) {
@@ -329,9 +330,9 @@
 			<p class="md-note"><Icon name="notifications_off" size={20} />{t('email_off')}</p>
 		{:else if rem.direction === 'borrowed'}
 			<p class="md-note"><Icon name="notifications" size={20} />{t('borrowed_reminders')}</p>
-		{:else if rem.contact_opted_out}
+		{:else if rem.contact_opted_out && !contactSMS}
 			<p class="md-note"><Icon name="notifications_off" size={20} />{t('contact_opted_out', { name: loan.contact_name })}</p>
-		{:else if !rem.contact_email}
+		{:else if !rem.contact_email && !contactSMS}
 			<p class="md-note"><Icon name="mail" size={20} /><span>{t('contact_no_email', { name: loan.contact_name })} <a href="/contacts/{loan.contact_id}/edit">{t('edit')}</a></span></p>
 		{/if}
 		<p class="md-body-small md-muted">{t('reminders_hint')}</p>
@@ -341,6 +342,7 @@
 				rules={rem.rules}
 				contactName={loan.contact_name}
 				defaultHour={data.sendHour}
+				smsEnabled={data.smsEnabled}
 				onsave={async (rules) => {
 					await api('PUT', `/agreements/${loan.id}/reminders`, { rules });
 					snackbar.show(t('reminders_saved'));
@@ -353,7 +355,7 @@
 			<p class="md-label-large">{t('next_reminders')}</p>
 			<ul class="sends md-body-medium">
 				{#each rem.upcoming as s (s.id)}
-					<li><Icon name="schedule" size={18} />{when(s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}{s.tone === 'firm' ? ` · ${t('tone_firm')}` : ''}</li>
+					<li><Icon name="schedule" size={18} />{when(s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}{s.channel === 'sms' ? ` · ${t('channel_sms')}` : ''}{s.tone === 'firm' ? ` · ${t('tone_firm')}` : ''}</li>
 				{/each}
 			</ul>
 		{/if}
@@ -361,6 +363,9 @@
 		<div class="send_now">
 			{#if contactReachable}
 				<button type="button" class="md-button md-button--tonal md-state" onclick={() => sendNow('contact')}><Icon name="send" size={18} />{t('send_now_contact', { name: loan.contact_name })}</button>
+			{/if}
+			{#if contactSMS}
+				<button type="button" class="md-button md-button--tonal md-state" onclick={() => sendNow('contact', 'sms')}><Icon name="send" size={18} />{t('send_now_sms', { name: loan.contact_name })}</button>
 			{/if}
 			<button type="button" class="md-button md-button--outlined md-state" onclick={() => sendNow('self')}><Icon name="send" size={18} />{t('send_now_me')}</button>
 		</div>
@@ -371,7 +376,7 @@
 				{#each rem.recent as s (s.id)}
 					<li>
 						<span class="md-chip md-chip--{s.status === 'sent' ? 'success' : s.status === 'failed' ? 'error' : 'neutral'}">{t(`send_status_${s.status}` as Key)}</span>
-						{when(s.sent_at ?? s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}
+						{when(s.sent_at ?? s.scheduled_for)} · {s.recipient === 'self' ? t('to_me') : t('to_contact', { name: loan.contact_name })}{s.channel === 'sms' ? ` · ${t('channel_sms')}` : ''}
 						{#if s.skip_reason}<span class="md-muted"> · {t(`skip_${s.skip_reason}` as Key)}</span>{/if}
 					</li>
 				{/each}

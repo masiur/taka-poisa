@@ -80,6 +80,8 @@ type Statement struct {
 	Currency    string          `json:"currency"`
 	OptedOut    bool            `json:"opted_out"`
 	HasEmail    bool            `json:"has_email"`
+	SMSOptedOut bool            `json:"sms_opted_out"`
+	HasPhone    bool            `json:"has_phone"`
 	Loans       []StatementLoan `json:"loans"`
 }
 
@@ -92,11 +94,13 @@ func (s *Store) Statement(ctx context.Context, token string) (Statement, error) 
 	var tz string
 	if err := s.db.QueryRow(ctx, `
 		SELECT acc.name, acc.currency, acc.timezone, c.name, c.locale, c.email_opted_out_at IS NOT NULL, c.email IS NOT NULL,
+			c.sms_opted_out_at IS NOT NULL, c.phone_e164 IS NOT NULL,
 			coalesce((SELECT u.name FROM account_members m JOIN users u ON u.id = m.user_id
 			          WHERE m.account_id = acc.id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1), acc.name)
 		FROM accounts acc JOIN contacts c ON c.account_id = acc.id
 		WHERE acc.id = $1 AND c.id = $2`, l.accountID, l.contactID).
-		Scan(&st.AccountName, &st.Currency, &tz, &st.ContactName, &st.Locale, &st.OptedOut, &st.HasEmail, &st.OwnerName); err != nil {
+		Scan(&st.AccountName, &st.Currency, &tz, &st.ContactName, &st.Locale, &st.OptedOut, &st.HasEmail,
+			&st.SMSOptedOut, &st.HasPhone, &st.OwnerName); err != nil {
 		return st, err
 	}
 	today := Today(tz)
@@ -242,8 +246,12 @@ func (s *Store) ResolveClaim(ctx context.Context, accountID, userID, agreementID
 	return tx.Commit(ctx)
 }
 
-// OptOut stops all reminder emails to the link's contact.
-func (s *Store) OptOut(ctx context.Context, token string) error {
+// OptOut stops reminders to the link's contact on one channel ("email" or "sms").
+func (s *Store) OptOut(ctx context.Context, token, channel string) error {
+	column := "email_opted_out_at"
+	if channel == "sms" {
+		column = "sms_opted_out_at"
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -253,13 +261,12 @@ func (s *Store) OptOut(ctx context.Context, token string) error {
 	if err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `
-		UPDATE contacts SET email_opted_out_at = now() WHERE id = $1 AND email_opted_out_at IS NULL`, l.contactID)
+	tag, err := tx.Exec(ctx, `UPDATE contacts SET `+column+` = now() WHERE id = $1 AND `+column+` IS NULL`, l.contactID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() > 0 {
-		if err := logActivity(ctx, tx, l.accountID, 0, l.contactID, 0, "contact.opted_out", nil); err != nil {
+		if err := logActivity(ctx, tx, l.accountID, 0, l.contactID, 0, "contact.opted_out", map[string]any{"channel": channel}); err != nil {
 			return err
 		}
 	}
@@ -286,6 +293,8 @@ type ReminderContext struct {
 	ContactEmail  string
 	ContactLocale string
 	OptedOut      bool
+	ContactPhone  string
+	SMSOptedOut   bool
 	Today         Date
 	Remaining     int64
 	Overdue       int64
@@ -300,7 +309,8 @@ func (s *Store) ReminderContext(ctx context.Context, accountID, agreementID int6
 	var email *string
 	err := s.db.QueryRow(ctx, `
 		SELECT a.contact_id, a.status, a.direction, a.currency, acc.name, acc.timezone,
-			u.name, u.email, u.locale, c.name, c.email, c.locale, c.email_opted_out_at IS NOT NULL
+			u.name, u.email, u.locale, c.name, c.email, c.locale, c.email_opted_out_at IS NOT NULL,
+			coalesce(c.phone_e164, ''), c.sms_opted_out_at IS NOT NULL
 		FROM agreements a
 		JOIN accounts acc ON acc.id = a.account_id
 		JOIN contacts c ON c.id = a.contact_id
@@ -308,7 +318,8 @@ func (s *Store) ReminderContext(ctx context.Context, accountID, agreementID int6
 		              WHERE m.account_id = acc.id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1) u ON true
 		WHERE a.account_id = $1 AND a.id = $2`, accountID, agreementID).
 		Scan(&rc.ContactID, &rc.Status, &rc.Direction, &rc.Currency, &rc.AccountName, &tz,
-			&rc.OwnerName, &rc.OwnerEmail, &rc.OwnerLocale, &rc.ContactName, &email, &rc.ContactLocale, &rc.OptedOut)
+			&rc.OwnerName, &rc.OwnerEmail, &rc.OwnerLocale, &rc.ContactName, &email, &rc.ContactLocale, &rc.OptedOut,
+			&rc.ContactPhone, &rc.SMSOptedOut)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return rc, ErrNotFound
 	}
